@@ -27,6 +27,10 @@ go.work.sum
 # env file
 .env
 
+# Built binary and local runtime config
+/mmproxy
+/config.toml
+
 # Editor/IDE
 # .idea/
 # .vscode/

@@ -1,0 +1,15 @@
+services:
+  mmproxy:
+    build:
+      context: .
+      args:
+        LDFLAGS: "${LDFLAGS:-}"
+    image: mmproxy:latest
+    container_name: mmproxy
+    ports:
+      - "8080:8080"
+    volumes:
+      - ./config.toml:/data/config.toml:ro
+    # unless-stopped compensates for the fail-fast startup: if Mattermost is
+    # briefly unreachable when the container boots, Docker keeps retrying.
+    restart: unless-stopped

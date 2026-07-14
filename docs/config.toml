@@ -1,0 +1,42 @@
+# MMProxy configuration example.
+#
+# Copy this file, fill in the real values and pass the path via -config.
+# At least one source (telegram or miniflux) must be enabled.
+
+[base]
+# HTTP listen address (host:port). Default ":8080".
+addr = ":8080"
+# Verbose logging with source locations.
+debug = false
+
+[mattermost]
+# Required. Base URL of the Mattermost server (no trailing /api/v4).
+url = "https://mattermost.example.com"
+# Required. Access token. Prefer a dedicated bot account (System Console ->
+# Integrations -> Bot Accounts); the bot must be a member of the target channel.
+token = "your-mattermost-bot-token"
+# Required. Default channel ID for both sources. Get it from the channel URL
+# or the channel's "View Info" dialog. This is the internal ID, not the name.
+channel_id = "shared-channel-id"
+
+[telegram]
+# Empty token disables the Telegram source.
+# Create the bot via @BotFather and paste its token here.
+token = ""
+# Required when token is set: Telegram user IDs allowed to use the bot.
+# Everyone else is ignored silently. Ask @userinfobot for your numeric ID.
+allowed_users = []
+# Optional: post Telegram messages to a different channel than the shared one.
+# Empty falls back to mattermost.channel_id.
+channel_id = ""
+
+[miniflux]
+# Empty secret disables the Miniflux webhook (/miniflux returns 404).
+# In Miniflux: Settings -> Integrations -> Webhook. Enable it, then copy the
+# generated secret here (it signs each request with HMAC-SHA256).
+webhook_secret = ""
+# Optional: only accept entries from these feed IDs. Empty accepts all feeds.
+feed_ids = []
+# Optional: post Miniflux entries to a different channel than the shared one.
+# Empty falls back to mattermost.channel_id.
+channel_id = ""

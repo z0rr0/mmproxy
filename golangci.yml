@@ -1,0 +1,50 @@
+version: "2"
+run:
+  go: "1.26"
+  timeout: 3m
+  tests: false
+linters:
+  default: all
+  disable:
+    - depguard
+    - err113
+    - exhaustruct
+    - godox
+    - mnd
+    - nilnil
+    - nlreturn
+    - noinlineerr
+    - varnamelen
+    - wrapcheck
+    - wsl
+    - wsl_v5
+  settings:
+    govet:
+      enable-all: true
+      # fieldalignment reorders config structs away from their TOML section
+      # layout for a memory win that is irrelevant to this I/O-bound service.
+      disable:
+        - fieldalignment
+    tagliatelle:
+      case:
+        rules:
+          json: snake
+    lll:
+      line-length: 160
+    cyclop:
+      max-complexity: 20
+    gocyclo:
+      min-complexity: 20
+    funlen:
+      statements: 50
+      lines: 150
+  exclusions:
+    generated: lax
+    paths:
+      - docs
+output:
+  formats:
+    tab:
+      path: stdout
+      print-linter-name: true
+      colors: true

@@ -1,7 +1,7 @@
 # MMProxy — implementation notes
 
-Business logic, message formats and deliberate v1 trade-offs. For build/config
-mechanics see the README; for LLM-oriented internals see `CLAUDE.md`.
+Business logic, message formats and deliberate v1 trade-offs. For build and
+configuration mechanics see the README.
 
 ## Data flows
 
@@ -33,6 +33,9 @@ is returned to the caller (bot reply / HTTP status) rather than retried.
       the channel is public.
 - **Replies** go back to the origin chat as a reply to the original message:
   "Опубликовано в Mattermost." on success, the error text on failure.
+- **Shutdown** stops long polling first, then waits up to the shared shutdown
+  timeout for already-dispatched handlers. Handler work uses a separate context
+  so cancelling polling does not abort an in-flight Mattermost post.
 
 Example post:
 
@@ -62,6 +65,9 @@ Breaking: something happened.
 - **Batching**: all entries of one event become **one** Mattermost post — a
   Markdown bulleted list of `[title](url)` under the feed title. Entry HTML
   `content` is intentionally not published in v1.
+- **Markdown labels**: dynamic feed, entry and Telegram attribution labels are
+  flattened to one line and escaped before being inserted into Markdown.
+  Telegram message bodies and entry URLs remain unchanged.
 
 Example post:
 
@@ -96,8 +102,8 @@ This is an accepted v1 trade-off of the synchronous, retry-free design.
 - Startup is **fail-fast**: if the Mattermost `GetMe` health check fails (bad
   URL/token or server down), the process exits. In production, Docker's
   `restart: unless-stopped` covers transient unavailability.
-- Markdown edge case: a `]` or `(` inside an entry/attribution title can break a
-  Markdown link. Not escaped in v1.
+- The Mattermost integration uses a small standard-library HTTP client for
+  `GET /api/v4/users/me` and `POST /api/v4/posts`; no server SDK is required.
 
 ## External setup
 

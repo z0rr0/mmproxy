@@ -4,6 +4,7 @@
 package config
 
 import (
+	"bytes"
 	"errors"
 	"fmt"
 	"net/url"
@@ -68,7 +69,7 @@ func Load(path string) (*Config, error) {
 	}
 
 	cfg := new(Config)
-	if err = toml.Unmarshal(data, cfg); err != nil {
+	if err = toml.NewDecoder(bytes.NewReader(data)).DisallowUnknownFields().Decode(cfg); err != nil {
 		return nil, fmt.Errorf("unmarshal config: %w", err)
 	}
 
@@ -109,6 +110,8 @@ func (m *Mattermost) validate() error {
 		errs = append(errs, fmt.Errorf("mattermost: invalid url: %w", err))
 	} else if u.Scheme != "http" && u.Scheme != "https" {
 		errs = append(errs, fmt.Errorf("mattermost: url scheme must be http or https, got %q", u.Scheme))
+	} else if u.Host == "" {
+		errs = append(errs, errors.New("mattermost: url host is required"))
 	}
 	if m.Token == "" {
 		errs = append(errs, errors.New("mattermost: token is required"))

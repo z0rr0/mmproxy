@@ -4,7 +4,9 @@ import (
 	"context"
 	"errors"
 	"strings"
+	"sync"
 	"testing"
+	"time"
 
 	"github.com/go-telegram/bot"
 	"github.com/go-telegram/bot/models"
@@ -30,6 +32,39 @@ type mockPoster struct {
 	channel string
 	message string
 	err     error
+}
+
+type blockingPoster struct {
+	started  chan struct{}
+	release  chan struct{}
+	canceled chan struct{}
+	once     sync.Once
+}
+
+type multiBlockingPoster struct {
+	started chan struct{}
+	release chan struct{}
+}
+
+func (p *multiBlockingPoster) Post(ctx context.Context, _, _ string) error {
+	p.started <- struct{}{}
+	select {
+	case <-p.release:
+		return nil
+	case <-ctx.Done():
+		return ctx.Err()
+	}
+}
+
+func (p *blockingPoster) Post(ctx context.Context, _, _ string) error {
+	p.once.Do(func() { close(p.started) })
+	select {
+	case <-p.release:
+		return nil
+	case <-ctx.Done():
+		close(p.canceled)
+		return ctx.Err()
+	}
 }
 
 func (m *mockPoster) Post(_ context.Context, channelID, message string) error {
@@ -182,5 +217,123 @@ func TestHandlePosterError(t *testing.T) {
 	}
 	if !strings.Contains(api.lastTx, "mattermost down") {
 		t.Errorf("reply = %q, want it to include the error text", api.lastTx)
+	}
+}
+
+func TestBotShutdownWaitsForHandlers(t *testing.T) {
+	poster := &blockingPoster{
+		started:  make(chan struct{}),
+		release:  make(chan struct{}),
+		canceled: make(chan struct{}),
+	}
+	handlerCtx, cancelHandlers := context.WithCancel(context.Background())
+	t.Cleanup(cancelHandlers)
+	b := &Bot{
+		handler:        newHandler(poster, 1),
+		handlerCtx:     handlerCtx,
+		cancelHandlers: cancelHandlers,
+	}
+	b.startHandler(handlerCtx, &mockBotAPI{}, forwardedMsg(1, "news"))
+	<-poster.started
+
+	shutdownDone := make(chan error, 1)
+	go func() { shutdownDone <- b.Shutdown(context.Background()) }()
+
+	select {
+	case err := <-shutdownDone:
+		t.Fatalf("Shutdown returned before handler completed: %v", err)
+	case <-time.After(20 * time.Millisecond):
+	}
+
+	close(poster.release)
+	select {
+	case err := <-shutdownDone:
+		if err != nil {
+			t.Fatalf("Shutdown failed: %v", err)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("Shutdown did not return after handler completed")
+	}
+}
+
+func TestBotShutdownTimeoutCancelsHandlers(t *testing.T) {
+	poster := &blockingPoster{
+		started:  make(chan struct{}),
+		release:  make(chan struct{}),
+		canceled: make(chan struct{}),
+	}
+	handlerCtx, cancelHandlers := context.WithCancel(context.Background())
+	b := &Bot{
+		handler:        newHandler(poster, 1),
+		handlerCtx:     handlerCtx,
+		cancelHandlers: cancelHandlers,
+	}
+	b.startHandler(handlerCtx, &mockBotAPI{}, forwardedMsg(1, "news"))
+	<-poster.started
+
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Millisecond)
+	defer cancel()
+	err := b.Shutdown(ctx)
+	if !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("Shutdown error = %v, want deadline exceeded", err)
+	}
+
+	select {
+	case <-poster.canceled:
+	case <-time.After(time.Second):
+		t.Fatal("handler context was not cancelled after shutdown timeout")
+	}
+}
+
+func TestBotShutdownWaitsForMultipleHandlers(t *testing.T) {
+	poster := &multiBlockingPoster{started: make(chan struct{}, 2), release: make(chan struct{})}
+	handlerCtx, cancelHandlers := context.WithCancel(context.Background())
+	t.Cleanup(cancelHandlers)
+	b := &Bot{
+		handler:        newHandler(poster, 1),
+		handlerCtx:     handlerCtx,
+		cancelHandlers: cancelHandlers,
+	}
+	b.startHandler(handlerCtx, &mockBotAPI{}, forwardedMsg(1, "first"))
+	b.startHandler(handlerCtx, &mockBotAPI{}, forwardedMsg(1, "second"))
+	<-poster.started
+	<-poster.started
+
+	shutdownDone := make(chan error, 1)
+	go func() { shutdownDone <- b.Shutdown(context.Background()) }()
+	select {
+	case err := <-shutdownDone:
+		t.Fatalf("Shutdown returned before handlers completed: %v", err)
+	case <-time.After(20 * time.Millisecond):
+	}
+	close(poster.release)
+	select {
+	case err := <-shutdownDone:
+		if err != nil {
+			t.Fatalf("Shutdown failed: %v", err)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("Shutdown did not wait for both handlers")
+	}
+}
+
+func TestBotDropsUpdateAfterPollingCancellation(t *testing.T) {
+	handlerCtx, cancelHandlers := context.WithCancel(context.Background())
+	t.Cleanup(cancelHandlers)
+	poster := &mockPoster{}
+	b := &Bot{
+		handler:        newHandler(poster, 1),
+		handlerCtx:     handlerCtx,
+		cancelHandlers: cancelHandlers,
+	}
+	pollingCtx, cancelPolling := context.WithCancel(context.Background())
+	cancelPolling()
+
+	b.dispatchHandler(pollingCtx, &mockBotAPI{}, forwardedMsg(1, "news"))
+	if err := b.Shutdown(context.Background()); err != nil {
+		t.Fatalf("Shutdown failed: %v", err)
+	}
+	if poster.calls != 0 {
+		t.Fatalf("poster calls = %d, want 0 after polling cancellation", poster.calls)
 	}
 }

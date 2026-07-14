@@ -10,6 +10,12 @@ services:
       - "8080:8080"
     volumes:
       - ./config.toml:/data/config.toml:ro
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:8080/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 5s
     # unless-stopped compensates for the fail-fast startup: if Mattermost is
     # briefly unreachable when the container boots, Docker keeps retrying.
     restart: unless-stopped

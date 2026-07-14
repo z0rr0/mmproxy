@@ -104,6 +104,20 @@ func TestLoadBadTOML(t *testing.T) {
 	}
 }
 
+func TestLoadRejectsUnknownFields(t *testing.T) {
+	content := validConfig + `
+[base.extra]
+enabled = true
+`
+	_, err := Load(writeConfig(t, content))
+	if err == nil {
+		t.Fatal("expected error for unknown TOML field")
+	}
+	if !strings.Contains(err.Error(), "strict mode") {
+		t.Errorf("error = %q, want strict-mode unknown field error", err)
+	}
+}
+
 func TestValidateErrors(t *testing.T) {
 	tests := []struct {
 		name    string
@@ -131,6 +145,19 @@ token = "tg"
 allowed_users = [1]
 `,
 			want: "url scheme must be http or https",
+		},
+		{
+			name: "url without host",
+			content: `
+[mattermost]
+url = "https:"
+token = "t"
+channel_id = "c"
+[telegram]
+token = "tg"
+allowed_users = [1]
+`,
+			want: "url host is required",
 		},
 		{
 			name: "no sources enabled",

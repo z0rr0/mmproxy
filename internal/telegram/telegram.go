@@ -4,7 +4,9 @@ package telegram
 
 import (
 	"context"
+	"fmt"
 	"log/slog"
+	"sync"
 
 	"github.com/go-telegram/bot"
 	"github.com/go-telegram/bot/models"
@@ -35,6 +37,17 @@ type Handler struct {
 	allowed   map[int64]struct{}
 }
 
+// Bot wraps the Telegram client with lifecycle tracking for handler goroutines.
+// Start stops accepting updates when its context is cancelled; Shutdown waits
+// for handlers that were already dispatched and cancels them on timeout.
+type Bot struct {
+	api            *bot.Bot
+	handler        *Handler
+	handlerCtx     context.Context //nolint:containedctx // deliberately outlives the polling context
+	cancelHandlers context.CancelFunc
+	handlers       sync.WaitGroup
+}
+
 // NewHandler builds a Handler that posts to channelID for users in allowed.
 func NewHandler(poster Poster, channelID string, allowed map[int64]struct{}) *Handler {
 	return &Handler{poster: poster, channelID: channelID, allowed: allowed}
@@ -42,8 +55,50 @@ func NewHandler(poster Poster, channelID string, allowed map[int64]struct{}) *Ha
 
 // NewBot constructs a bot with the handler wired as the default handler for all
 // updates.
-func NewBot(token string, h *Handler) (*bot.Bot, error) {
-	return bot.New(token, bot.WithDefaultHandler(h.wrap))
+func NewBot(token string, h *Handler) (*Bot, error) {
+	handlerCtx, cancelHandlers := context.WithCancel(context.Background())
+	b := &Bot{
+		handler:        h,
+		handlerCtx:     handlerCtx,
+		cancelHandlers: cancelHandlers,
+	}
+
+	api, err := bot.New(
+		token,
+		bot.WithNotAsyncHandlers(),
+		bot.WithDefaultHandler(b.dispatch),
+	)
+	if err != nil {
+		cancelHandlers()
+		return nil, err
+	}
+	b.api = api
+	return b, nil
+}
+
+// Start polls Telegram until ctx is cancelled. Handler completion is managed
+// separately by Shutdown so an in-flight post is not cancelled with polling.
+func (b *Bot) Start(ctx context.Context) {
+	b.api.Start(ctx)
+}
+
+// Shutdown waits for every handler registered before Start returned. Callers
+// must stop and join Start first, ensuring no concurrent WaitGroup additions.
+func (b *Bot) Shutdown(ctx context.Context) error {
+	done := make(chan struct{})
+	go func() {
+		b.handlers.Wait()
+		close(done)
+	}()
+
+	select {
+	case <-done:
+		b.cancelHandlers()
+		return nil
+	case <-ctx.Done():
+		b.cancelHandlers()
+		return fmt.Errorf("wait for telegram handlers: %w", ctx.Err())
+	}
 }
 
 // Handle is the testable core: it validates the update, enforces the allowlist,
@@ -97,9 +152,23 @@ func (h *Handler) reply(ctx context.Context, api BotAPI, msg *models.Message, te
 	}
 }
 
-// wrap adapts Handle to bot.HandlerFunc; *bot.Bot satisfies BotAPI.
-func (h *Handler) wrap(ctx context.Context, b *bot.Bot, update *models.Update) {
-	h.Handle(ctx, b, update)
+// dispatch is called synchronously by the SDK worker. It registers the handler
+// before starting its goroutine, so Start cannot return ahead of registration.
+func (b *Bot) dispatch(ctx context.Context, api *bot.Bot, update *models.Update) {
+	b.dispatchHandler(ctx, api, update)
+}
+
+func (b *Bot) dispatchHandler(pollingCtx context.Context, api BotAPI, update *models.Update) {
+	if pollingCtx.Err() != nil {
+		return
+	}
+	b.startHandler(b.handlerCtx, api, update) //nolint:contextcheck // handler work must outlive polling
+}
+
+func (b *Bot) startHandler(ctx context.Context, api BotAPI, update *models.Update) {
+	b.handlers.Go(func() {
+		b.handler.Handle(ctx, api, update)
+	})
 }
 
 // emptyUpdate reports whether the update lacks a usable message or sender.

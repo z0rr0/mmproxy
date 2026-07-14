@@ -2,7 +2,7 @@ NAME=mmproxy
 VERSION=$(shell git describe --tags --always --dirty 2>/dev/null || echo "v0.0.1")
 LDFLAGS=-X main.version=$(VERSION)
 
-.PHONY: all fmt lint test build run docker clean
+.PHONY: all fmt lint vuln test build run docker clean
 
 all: build
 
@@ -13,6 +13,9 @@ lint:
 	@test -z "$$(gofmt -l . | tee /dev/stderr)" || (echo "gofmt: files need formatting" && exit 1)
 	go vet ./...
 	golangci-lint -c golangci.yml run
+	$(MAKE) vuln
+
+vuln:
 	-govulncheck ./...
 
 test: lint

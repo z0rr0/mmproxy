@@ -27,6 +27,29 @@ var version = "v0.0.1"
 
 const shutdownTimeout = 10 * time.Second
 
+type mattermostClient interface {
+	Ping(ctx context.Context) error
+	Post(ctx context.Context, channelID, message string) error
+}
+
+type telegramBot interface {
+	Start(ctx context.Context)
+	Shutdown(ctx context.Context) error
+}
+
+type httpServer interface {
+	Addr() string
+	ListenAndServe() error
+	Shutdown(ctx context.Context) error
+}
+
+type appDeps struct {
+	newMattermost   func(baseURL, token string) (mattermostClient, error)
+	newTelegram     func(token string, handler *telegram.Handler) (telegramBot, error)
+	newHTTPServer   func(cfg *config.Config, poster server.Poster, version string) httpServer
+	shutdownTimeout time.Duration
+}
+
 func main() {
 	configPath := flag.String("config", "config.toml", "path to TOML config file")
 	flag.Parse()
@@ -55,31 +78,54 @@ func main() {
 func run(cfg *config.Config) error {
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer cancel()
+	return runContext(ctx, cfg, productionDeps())
+}
 
-	mm := mattermost.New(cfg.Mattermost.URL, cfg.Mattermost.Token)
-	if err := mm.Ping(ctx); err != nil {
-		return err
+func productionDeps() appDeps {
+	return appDeps{
+		newMattermost: func(baseURL, token string) (mattermostClient, error) {
+			return mattermost.New(baseURL, token)
+		},
+		newTelegram: func(token string, handler *telegram.Handler) (telegramBot, error) {
+			return telegram.NewBot(token, handler)
+		},
+		newHTTPServer: func(cfg *config.Config, poster server.Poster, version string) httpServer {
+			return server.New(cfg, poster, version)
+		},
+		shutdownTimeout: shutdownTimeout,
+	}
+}
+
+func runContext(ctx context.Context, cfg *config.Config, deps appDeps) error {
+	mm, err := deps.newMattermost(cfg.Mattermost.URL, cfg.Mattermost.Token)
+	if err != nil {
+		return fmt.Errorf("create mattermost client: %w", err)
+	}
+	if pingErr := mm.Ping(ctx); pingErr != nil {
+		return pingErr
 	}
 
-	// Telegram long polling stops when ctx is cancelled. When the source is
-	// disabled, tgDone is closed immediately so shutdown never blocks on it.
+	var tg telegramBot
+	stopTelegram := func() {}
 	tgDone := make(chan struct{})
 	if cfg.Telegram.Enabled() {
 		handler := telegram.NewHandler(mm, cfg.Telegram.ChannelID, cfg.Telegram.AllowedIDs)
-		b, err := telegram.NewBot(cfg.Telegram.Token, handler)
+		tg, err = deps.newTelegram(cfg.Telegram.Token, handler)
 		if err != nil {
 			return fmt.Errorf("create telegram bot: %w", err)
 		}
+		telegramCtx, cancelTelegram := context.WithCancel(context.WithoutCancel(ctx))
+		stopTelegram = cancelTelegram
 		go func() {
 			slog.Info("telegram bot started")
-			b.Start(ctx)
+			tg.Start(telegramCtx)
 			close(tgDone)
 		}()
 	} else {
 		close(tgDone)
 	}
 
-	srv := server.New(cfg, mm, version)
+	srv := deps.newHTTPServer(cfg, mm, version)
 	listenDone := make(chan error, 1)
 	go func() {
 		slog.Info("http server listening", "addr", srv.Addr())
@@ -96,14 +142,33 @@ func run(cfg *config.Config) error {
 		slog.Info("shutdown signal received")
 	}
 
-	// Reverse-order shutdown: stop the HTTP server first, then the bot.
-	shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), shutdownTimeout)
+	// Stop both ingress paths promptly, then drain their in-flight work.
+	shutdownCtx, shutdownCancel := context.WithTimeout(context.WithoutCancel(ctx), deps.shutdownTimeout)
 	defer shutdownCancel()
-	if err := srv.Shutdown(shutdownCtx); err != nil {
-		slog.Error("http server shutdown error", "error", err)
+	httpShutdownDone := make(chan error, 1)
+	go func() { httpShutdownDone <- srv.Shutdown(shutdownCtx) }()
+
+	// Stop accepting Telegram updates while the HTTP server drains in-flight
+	// requests. Both sources share the same shutdown deadline.
+	stopTelegram()
+	select {
+	case <-tgDone:
+	case <-shutdownCtx.Done():
+		slog.Error("telegram polling shutdown error", "error", shutdownCtx.Err())
 	}
-	cancel()
-	<-tgDone
+	select {
+	case shutdownErr := <-httpShutdownDone:
+		if shutdownErr != nil {
+			slog.Error("http server shutdown error", "error", shutdownErr)
+		}
+	case <-shutdownCtx.Done():
+		slog.Error("http server shutdown error", "error", shutdownCtx.Err())
+	}
+	if tg != nil {
+		if err := tg.Shutdown(shutdownCtx); err != nil {
+			slog.Error("telegram handlers shutdown error", "error", err)
+		}
+	}
 
 	return serveErr
 }

@@ -16,8 +16,9 @@ const requestIDHeader = "X-Request-ID"
 type responseWriter struct {
 	http.ResponseWriter
 
-	status int
-	bytes  int
+	status      int
+	bytes       int
+	wroteHeader bool
 }
 
 func wrapResponseWriter(w http.ResponseWriter) *responseWriter {
@@ -25,15 +26,26 @@ func wrapResponseWriter(w http.ResponseWriter) *responseWriter {
 }
 
 func (w *responseWriter) WriteHeader(status int) {
+	if w.wroteHeader {
+		return
+	}
+	w.wroteHeader = true
 	w.status = status
 	w.ResponseWriter.WriteHeader(status)
 }
 
 func (w *responseWriter) Write(b []byte) (int, error) {
+	if !w.wroteHeader {
+		w.WriteHeader(http.StatusOK)
+	}
 	n, err := w.ResponseWriter.Write(b)
 	w.bytes += n
 	return n, err
 }
+
+// Unwrap allows http.ResponseController to reach optional interfaces provided
+// by the underlying writer.
+func (w *responseWriter) Unwrap() http.ResponseWriter { return w.ResponseWriter }
 
 // newRequestID returns a short random hex identifier without pulling in an
 // external UUID dependency.
@@ -54,26 +66,43 @@ func LoggingMiddleware(next http.Handler) http.Handler {
 
 		ww := wrapResponseWriter(w)
 		ww.Header().Set(requestIDHeader, requestID)
-		next.ServeHTTP(ww, r)
+		defer func() {
+			if rec := recover(); rec != nil {
+				slog.Error("panic recovered",
+					"error", rec,
+					"request_id", requestID,
+					"path", r.URL.Path,
+					"stack", string(debug.Stack()),
+				)
+				if !ww.wroteHeader {
+					http.Error(ww, "Internal Server Error", http.StatusInternalServerError)
+				}
+			}
+			logRequestCompleted(r, ww, requestID, time.Since(start))
+		}()
 
-		attrs := []any{
-			slog.String("request_id", requestID),
-			slog.String("method", r.Method),
-			slog.String("path", r.URL.Path),
-			slog.Int("status", ww.status),
-			slog.Int("bytes", ww.bytes),
-			slog.String("remote_addr", r.RemoteAddr),
-			slog.Duration("duration", time.Since(start)),
-		}
-		switch {
-		case ww.status >= http.StatusInternalServerError:
-			slog.Error("request completed", attrs...)
-		case ww.status >= http.StatusBadRequest:
-			slog.Warn("request completed", attrs...)
-		default:
-			slog.Info("request completed", attrs...)
-		}
+		next.ServeHTTP(ww, r)
 	})
+}
+
+func logRequestCompleted(r *http.Request, w *responseWriter, requestID string, duration time.Duration) {
+	attrs := []any{
+		slog.String("request_id", requestID),
+		slog.String("method", r.Method),
+		slog.String("path", r.URL.Path),
+		slog.Int("status", w.status),
+		slog.Int("bytes", w.bytes),
+		slog.String("remote_addr", r.RemoteAddr),
+		slog.Duration("duration", duration),
+	}
+	switch {
+	case w.status >= http.StatusInternalServerError:
+		slog.Error("request completed", attrs...)
+	case w.status >= http.StatusBadRequest:
+		slog.Warn("request completed", attrs...)
+	default:
+		slog.Info("request completed", attrs...)
+	}
 }
 
 // RecoverMiddleware converts a handler panic into a 500 response and logs the

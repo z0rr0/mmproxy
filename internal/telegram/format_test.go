@@ -19,7 +19,7 @@ func TestOriginDescription(t *testing.T) {
 				Type:              models.MessageOriginTypeUser,
 				MessageOriginUser: &models.MessageOriginUser{SenderUser: models.User{FirstName: "Иван", LastName: "Петров", Username: "ivan"}},
 			},
-			want: "Иван Петров (@ivan)",
+			want: "Иван Петров \\(@ivan\\)",
 		},
 		{
 			name: "user first name only",
@@ -101,5 +101,21 @@ func TestFormatForwarded(t *testing.T) {
 	}
 	if !strings.Contains(got, "hello world") {
 		t.Error("formatted text must contain the body")
+	}
+}
+
+func TestFormatForwardedEscapesAttributionButNotBody(t *testing.T) {
+	origin := &models.MessageOrigin{
+		Type: models.MessageOriginTypeChannel,
+		MessageOriginChannel: &models.MessageOriginChannel{
+			Chat:      models.Chat{Title: "[News] #1\nInjected", Username: "newschan"},
+			MessageID: 42,
+		},
+	}
+	body := "**keep body markdown**"
+	got := FormatForwarded(origin, body)
+	want := "Forwarded from \\[News\\] \\#1 Injected (https://t.me/newschan/42):\n\n" + body
+	if got != want {
+		t.Fatalf("FormatForwarded() = %q, want %q", got, want)
 	}
 }

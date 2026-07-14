@@ -47,8 +47,10 @@ cp docs/config.toml config.toml   # edit it, then:
 LDFLAGS="-X main.version=$(git describe --tags --always --dirty)" docker compose up -d --build
 ```
 
-The compose file mounts `./config.toml` read-only at `/data/config.toml` and
-restarts the container `unless-stopped`.
+The compose file mounts `./config.toml` read-only at `/data/config.toml`, checks
+`/health` on the default internal port 8080, and restarts the container
+`unless-stopped`. Docker records an unhealthy status but does not restart a
+running unhealthy container solely because of the health check.
 
 ## Configuration
 
@@ -71,14 +73,17 @@ and the v1 trade-offs.
 
 ```bash
 make fmt      # gofmt
-make lint     # gofmt check + go vet + golangci-lint + govulncheck
+make lint     # gofmt check + go vet + golangci-lint + non-blocking govulncheck
+make vuln     # informational govulncheck (never blocks the build)
 make test     # lint + go test -race -cover ./...
 make build    # binary with version injected via ldflags
 make docker   # build the container image
 make clean
 ```
 
-Requires Go 1.26 and (for linting) `golangci-lint`.
+Requires Go 1.26 and (for linting) `golangci-lint`. GitHub Actions runs build,
+vet, race-enabled tests and lint on pushes and pull requests to `main`;
+`govulncheck` is reported separately without blocking CI.
 
 ## License
 

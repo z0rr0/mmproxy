@@ -15,7 +15,8 @@ const (
 	readTimeout       = 10 * time.Second
 	readHeaderTimeout = 5 * time.Second
 	writeTimeout      = 30 * time.Second // must exceed the Mattermost request timeout
-	maxHeaderBytes    = 1 << 20          // 1 MiB
+	idleTimeout       = 60 * time.Second
+	maxHeaderBytes    = 1 << 20 // 1 MiB
 )
 
 // Poster publishes a message to a Mattermost channel. Defined on the consumer
@@ -50,8 +51,9 @@ func New(cfg *config.Config, poster Poster, version string) *Server {
 		mux.HandleFunc("POST /miniflux", s.handleMiniflux)
 	}
 
-	// Order matters: RecoverMiddleware is outermost so it also catches panics
-	// raised inside the logging middleware.
+	// LoggingMiddleware recovers handler panics so it can record their final
+	// status. RecoverMiddleware remains outermost as a last line of defense for
+	// panics raised by logging itself.
 	handler := RecoverMiddleware(LoggingMiddleware(mux))
 
 	s.srv = &http.Server{
@@ -60,6 +62,7 @@ func New(cfg *config.Config, poster Poster, version string) *Server {
 		ReadTimeout:       readTimeout,
 		ReadHeaderTimeout: readHeaderTimeout,
 		WriteTimeout:      writeTimeout,
+		IdleTimeout:       idleTimeout,
 		MaxHeaderBytes:    maxHeaderBytes,
 	}
 	return s

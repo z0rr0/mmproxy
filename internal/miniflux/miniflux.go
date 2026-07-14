@@ -11,6 +11,8 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"strings"
+
+	"github.com/z0rr0/mmproxy/internal/markdown"
 )
 
 // EventNewEntries is the only webhook event MMProxy acts on. Other events
@@ -56,7 +58,7 @@ func FormatPost(event *WebhookEvent) string {
 	var b strings.Builder
 	if event.Feed.Title != "" {
 		b.WriteString("#### ")
-		b.WriteString(event.Feed.Title)
+		b.WriteString(markdown.EscapeText(event.Feed.Title))
 		b.WriteString("\n")
 	}
 	for _, e := range event.Entries {
@@ -65,7 +67,7 @@ func FormatPost(event *WebhookEvent) string {
 			title = e.URL
 		}
 		b.WriteString("- [")
-		b.WriteString(title)
+		b.WriteString(markdown.EscapeText(title))
 		b.WriteString("](")
 		b.WriteString(e.URL)
 		b.WriteString(")\n")

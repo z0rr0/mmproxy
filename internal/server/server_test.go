@@ -107,6 +107,17 @@ func TestHealthAndVersion(t *testing.T) {
 	}
 }
 
+func TestServerTimeouts(t *testing.T) {
+	cfg := &config.Config{
+		Base:       config.Base{Addr: ":0"},
+		Mattermost: config.Mattermost{URL: "http://mm", Token: "t", ChannelID: "shared"},
+	}
+	s := New(cfg, &mockPoster{}, "v-test")
+	if s.srv.IdleTimeout != idleTimeout {
+		t.Errorf("IdleTimeout = %v, want %v", s.srv.IdleTimeout, idleTimeout)
+	}
+}
+
 func TestMinifluxHappyPath(t *testing.T) {
 	poster := &mockPoster{}
 	ts := newTestServer(t, poster, []int64{1})

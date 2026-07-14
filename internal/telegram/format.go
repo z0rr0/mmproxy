@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	"github.com/go-telegram/bot/models"
+	"github.com/z0rr0/mmproxy/internal/markdown"
 )
 
 // FormatForwarded renders a forwarded message into the text posted to
@@ -24,17 +25,17 @@ func originDescription(origin *models.MessageOrigin) string {
 		if origin.MessageOriginUser == nil {
 			return "unknown user"
 		}
-		return userName(origin.MessageOriginUser.SenderUser)
+		return markdown.EscapeText(userName(origin.MessageOriginUser.SenderUser))
 	case models.MessageOriginTypeHiddenUser:
 		if origin.MessageOriginHiddenUser == nil {
 			return "hidden user"
 		}
-		return origin.MessageOriginHiddenUser.SenderUserName
+		return markdown.EscapeText(origin.MessageOriginHiddenUser.SenderUserName)
 	case models.MessageOriginTypeChat:
 		if origin.MessageOriginChat == nil {
 			return "unknown chat"
 		}
-		return chatName(origin.MessageOriginChat.SenderChat)
+		return markdown.EscapeText(chatName(origin.MessageOriginChat.SenderChat))
 	case models.MessageOriginTypeChannel:
 		if origin.MessageOriginChannel == nil {
 			return "unknown channel"
@@ -74,7 +75,7 @@ func chatName(c models.Chat) string {
 // channelLabel names a source channel and, when it has a public username, links
 // to the exact forwarded message.
 func channelLabel(o *models.MessageOriginChannel) string {
-	title := chatName(o.Chat)
+	title := markdown.EscapeText(chatName(o.Chat))
 	if o.Chat.Username != "" {
 		return fmt.Sprintf("%s (https://t.me/%s/%d)", title, o.Chat.Username, o.MessageID)
 	}

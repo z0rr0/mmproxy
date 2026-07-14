@@ -1,8 +1,11 @@
 package server
 
 import (
+	"bytes"
+	"log/slog"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 )
 
@@ -51,5 +54,71 @@ func TestResponseWriterCaptures(t *testing.T) {
 	}
 	if ww.bytes != n || ww.bytes != 5 {
 		t.Errorf("bytes = %d, want 5", ww.bytes)
+	}
+}
+
+func TestResponseWriterKeepsFirstStatus(t *testing.T) {
+	rec := httptest.NewRecorder()
+	ww := wrapResponseWriter(rec)
+	ww.WriteHeader(http.StatusCreated)
+	ww.WriteHeader(http.StatusInternalServerError)
+
+	if rec.Code != http.StatusCreated || ww.status != http.StatusCreated {
+		t.Fatalf("status recorder=%d wrapper=%d, want first status 201", rec.Code, ww.status)
+	}
+}
+
+func TestResponseWriterImplicitOK(t *testing.T) {
+	rec := httptest.NewRecorder()
+	ww := wrapResponseWriter(rec)
+	if _, err := ww.Write([]byte("hello")); err != nil {
+		t.Fatal(err)
+	}
+	if ww.status != http.StatusOK || !ww.wroteHeader {
+		t.Fatalf("status=%d wroteHeader=%v, want explicit captured 200", ww.status, ww.wroteHeader)
+	}
+}
+
+func TestLoggingMiddlewareLogsRecoveredPanic(t *testing.T) {
+	var logs bytes.Buffer
+	previous := slog.Default()
+	slog.SetDefault(slog.New(slog.NewTextHandler(&logs, nil)))
+	t.Cleanup(func() { slog.SetDefault(previous) })
+
+	panicky := http.HandlerFunc(func(_ http.ResponseWriter, _ *http.Request) {
+		panic("boom")
+	})
+	handler := RecoverMiddleware(LoggingMiddleware(panicky))
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/panic", nil))
+
+	if rec.Code != http.StatusInternalServerError {
+		t.Fatalf("status = %d, want 500", rec.Code)
+	}
+	for _, want := range []string{"panic recovered", "request completed", "status=500"} {
+		if !strings.Contains(logs.String(), want) {
+			t.Errorf("logs missing %q: %s", want, logs.String())
+		}
+	}
+}
+
+func TestLoggingMiddlewarePanicAfterHeaderKeepsStatus(t *testing.T) {
+	var logs bytes.Buffer
+	previous := slog.Default()
+	slog.SetDefault(slog.New(slog.NewTextHandler(&logs, nil)))
+	t.Cleanup(func() { slog.SetDefault(previous) })
+
+	panicky := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusAccepted)
+		panic("boom")
+	})
+	rec := httptest.NewRecorder()
+	LoggingMiddleware(panicky).ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/panic", nil))
+
+	if rec.Code != http.StatusAccepted {
+		t.Fatalf("status = %d, want committed status 202", rec.Code)
+	}
+	if !strings.Contains(logs.String(), "status=202") {
+		t.Errorf("logs missing committed status: %s", logs.String())
 	}
 }

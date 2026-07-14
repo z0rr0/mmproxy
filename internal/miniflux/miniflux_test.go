@@ -78,6 +78,14 @@ func TestFormatPost(t *testing.T) {
 			},
 			want: "- [Solo](https://e.com/s)",
 		},
+		{
+			name: "markdown in labels is escaped",
+			event: WebhookEvent{
+				Feed:    Feed{Title: "News #1\nInjected"},
+				Entries: []Entry{{Title: "[Breaking] *now*", URL: "https://e.com/a_(b)"}},
+			},
+			want: "#### News \\#1 Injected\n- [\\[Breaking\\] \\*now\\*](https://e.com/a_(b))",
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

@@ -64,6 +64,15 @@ sections.
   construction, before goroutines start.
 - **Fail-fast startup**: `run` calls `mm.Ping` (GetMe) and returns on failure, so
   a bad URL/token or down Mattermost aborts the process.
+- **Timeouts come from config**, as `config.Duration` (a `time.Duration` with
+  `UnmarshalText`): the four HTTP server timeouts and `shutdown_timeout` in
+  `[base]`, the API request timeout in `[mattermost]`. Defaults live in
+  `config.applyDefaults`; a zero value means "unset", so an explicit `"0s"` also
+  becomes the default. `crossValidate` rejects
+  `write_timeout <= mattermost.timeout` — the invariant used to be a comment in
+  `server.go` and matters because the webhook posts synchronously inside the
+  handler. `mattermost.New` keeps its own `defaultTimeout` fallback for
+  non-positive input, so the package stays usable without `config`.
 - **Mattermost SDK is heavy**: `server/public` pulls ~40 transitive modules.
   `govulncheck` reports vulnerabilities in those imports that our code does not
   call — expected.

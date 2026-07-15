@@ -10,11 +10,20 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"time"
 
 	"github.com/pelletier/go-toml/v2"
 )
 
-const defaultAddr = ":8080"
+const (
+	defaultAddr              = ":8080"
+	defaultReadTimeout       = 10 * time.Second
+	defaultReadHeaderTimeout = 5 * time.Second
+	defaultWriteTimeout      = 30 * time.Second
+	defaultIdleTimeout       = 60 * time.Second
+	defaultShutdownTimeout   = 10 * time.Second
+	defaultMattermostTimeout = 10 * time.Second
+)
 
 // Config is the root configuration structure parsed from TOML.
 type Config struct {
@@ -24,10 +33,23 @@ type Config struct {
 	Miniflux   Miniflux   `toml:"miniflux"`
 }
 
-// Base holds general HTTP server settings.
+// Base holds general HTTP server settings. Every timeout defaults to a sane
+// value when omitted or set to zero.
 type Base struct {
 	Addr  string `toml:"addr"`
 	Debug bool   `toml:"debug"`
+	// ReadTimeout limits reading an entire request, including its body.
+	ReadTimeout Duration `toml:"read_timeout"`
+	// ReadHeaderTimeout limits reading the request headers.
+	ReadHeaderTimeout Duration `toml:"read_header_timeout"`
+	// WriteTimeout limits writing a response. It must exceed Mattermost.Timeout
+	// because the Miniflux webhook posts to Mattermost synchronously.
+	WriteTimeout Duration `toml:"write_timeout"`
+	// IdleTimeout limits how long keep-alive connections stay open.
+	IdleTimeout Duration `toml:"idle_timeout"`
+	// ShutdownTimeout is the graceful shutdown deadline shared by the HTTP
+	// server drain and the Telegram source.
+	ShutdownTimeout Duration `toml:"shutdown_timeout"`
 }
 
 // Mattermost holds the target Mattermost connection and default channel.
@@ -35,6 +57,8 @@ type Mattermost struct {
 	URL       string `toml:"url"`
 	Token     string `toml:"token"`
 	ChannelID string `toml:"channel_id"`
+	// Timeout is the per-request deadline for Mattermost API calls.
+	Timeout Duration `toml:"timeout"`
 }
 
 // Telegram holds the Telegram bot source configuration. An empty Token disables
@@ -80,9 +104,30 @@ func Load(path string) (*Config, error) {
 	return cfg, nil
 }
 
+// applyDefaults fills in unset fields. A zero duration means "not set", so an
+// explicit "0s" also resolves to the default: there is no way to disable a
+// timeout.
 func (c *Config) applyDefaults() {
 	if c.Base.Addr == "" {
 		c.Base.Addr = defaultAddr
+	}
+	if c.Base.ReadTimeout == 0 {
+		c.Base.ReadTimeout = Duration(defaultReadTimeout)
+	}
+	if c.Base.ReadHeaderTimeout == 0 {
+		c.Base.ReadHeaderTimeout = Duration(defaultReadHeaderTimeout)
+	}
+	if c.Base.WriteTimeout == 0 {
+		c.Base.WriteTimeout = Duration(defaultWriteTimeout)
+	}
+	if c.Base.IdleTimeout == 0 {
+		c.Base.IdleTimeout = Duration(defaultIdleTimeout)
+	}
+	if c.Base.ShutdownTimeout == 0 {
+		c.Base.ShutdownTimeout = Duration(defaultShutdownTimeout)
+	}
+	if c.Mattermost.Timeout == 0 {
+		c.Mattermost.Timeout = Duration(defaultMattermostTimeout)
 	}
 }
 
@@ -152,10 +197,17 @@ func (m *Miniflux) validate() error {
 }
 
 func (c *Config) crossValidate() error {
+	var errs []error
 	if !c.Telegram.Enabled() && !c.Miniflux.Enabled() {
-		return errors.New("at least one source (telegram or miniflux) must be enabled")
+		errs = append(errs, errors.New("at least one source (telegram or miniflux) must be enabled"))
 	}
-	return nil
+	// The Miniflux webhook posts to Mattermost synchronously, so a response cut
+	// short by write_timeout would abandon a request that is still in flight.
+	if c.Base.WriteTimeout <= c.Mattermost.Timeout {
+		errs = append(errs, fmt.Errorf("base: write_timeout (%s) must exceed mattermost timeout (%s)",
+			c.Base.WriteTimeout, c.Mattermost.Timeout))
+	}
+	return errors.Join(errs...)
 }
 
 // normalize builds derived allowlist maps and resolves empty per-source channels

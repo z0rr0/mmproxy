@@ -34,7 +34,7 @@ is returned to the caller (bot reply / HTTP status) rather than retried.
 - **Replies** go back to the origin chat as a reply to the original message:
   "Опубликовано в Mattermost." on success, the error text on failure.
 - **Shutdown** stops long polling first, then waits up to the shared shutdown
-  timeout for already-dispatched handlers. Handler work uses a separate context
+  timeout (`base.shutdown_timeout`) for already-dispatched handlers. Handler work uses a separate context
   so cancelling polling does not abort an in-flight Mattermost post.
 
 Example post:

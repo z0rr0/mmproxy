@@ -150,7 +150,7 @@ func TestRunContextPingErrorStopsStartup(t *testing.T) {
 	tgCreated := false
 	httpCreated := false
 	deps := appDeps{
-		newMattermost: func(string, string) (mattermostClient, error) { return mm, nil },
+		newMattermost: func(string, string, time.Duration) (mattermostClient, error) { return mm, nil },
 		newTelegram: func(string, *telegram.Handler) (telegramBot, error) {
 			tgCreated = true
 			return nil, errors.New("unexpected")
@@ -177,7 +177,7 @@ func TestRunContextTelegramCreationErrorStopsStartup(t *testing.T) {
 	createErr := errors.New("telegram unavailable")
 	httpCreated := false
 	deps := appDeps{
-		newMattermost: func(string, string) (mattermostClient, error) { return mm, nil },
+		newMattermost: func(string, string, time.Duration) (mattermostClient, error) { return mm, nil },
 		newTelegram: func(string, *telegram.Handler) (telegramBot, error) {
 			return nil, createErr
 		},
@@ -231,7 +231,7 @@ func testConfig(telegramEnabled bool) *config.Config {
 
 func testDeps(mm mattermostClient, tg telegramBot, srv httpServer) appDeps {
 	return appDeps{
-		newMattermost: func(string, string) (mattermostClient, error) { return mm, nil },
+		newMattermost: func(string, string, time.Duration) (mattermostClient, error) { return mm, nil },
 		newTelegram: func(string, *telegram.Handler) (telegramBot, error) {
 			return tg, nil
 		},

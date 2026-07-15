@@ -8,6 +8,21 @@
 addr = ":8080"
 # Verbose logging with source locations.
 debug = false
+# The timeouts below are Go duration strings ("10s", "1m30s"). They must not be
+# negative; an omitted key or "0s" means the default, there is no way to disable
+# a timeout.
+# Limit for reading an entire request, including its body. Default "10s".
+read_timeout = "10s"
+# Limit for reading the request headers. Default "5s".
+read_header_timeout = "5s"
+# Limit for writing a response. Must exceed mattermost.timeout, because the
+# Miniflux webhook posts to Mattermost synchronously. Default "30s".
+write_timeout = "30s"
+# How long idle keep-alive connections stay open. Default "60s".
+idle_timeout = "60s"
+# Graceful shutdown deadline shared by the HTTP drain and the Telegram source.
+# Default "10s".
+shutdown_timeout = "10s"
 
 [mattermost]
 # Required. Base URL of the Mattermost server (no trailing /api/v4).
@@ -18,6 +33,9 @@ token = "your-mattermost-bot-token"
 # Required. Default channel ID for both sources. Get it from the channel URL
 # or the channel's "View Info" dialog. This is the internal ID, not the name.
 channel_id = "shared-channel-id"
+# Per-request timeout for Mattermost API calls (startup ping and posts).
+# Must be below base.write_timeout. Default "10s".
+timeout = "10s"
 
 [telegram]
 # Empty token disables the Telegram source.

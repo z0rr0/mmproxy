@@ -11,6 +11,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/z0rr0/mmproxy/internal/config"
 )
@@ -108,13 +109,36 @@ func TestHealthAndVersion(t *testing.T) {
 }
 
 func TestServerTimeouts(t *testing.T) {
+	// Distinct values so a mixed-up field assignment cannot pass.
 	cfg := &config.Config{
-		Base:       config.Base{Addr: ":0"},
+		Base: config.Base{
+			Addr:              ":0",
+			ReadTimeout:       config.Duration(11 * time.Second),
+			ReadHeaderTimeout: config.Duration(3 * time.Second),
+			WriteTimeout:      config.Duration(31 * time.Second),
+			IdleTimeout:       config.Duration(61 * time.Second),
+		},
 		Mattermost: config.Mattermost{URL: "http://mm", Token: "t", ChannelID: "shared"},
 	}
 	s := New(cfg, &mockPoster{}, "v-test")
-	if s.srv.IdleTimeout != idleTimeout {
-		t.Errorf("IdleTimeout = %v, want %v", s.srv.IdleTimeout, idleTimeout)
+
+	tests := []struct {
+		name string
+		got  time.Duration
+		want time.Duration
+	}{
+		{"ReadTimeout", s.srv.ReadTimeout, 11 * time.Second},
+		{"ReadHeaderTimeout", s.srv.ReadHeaderTimeout, 3 * time.Second},
+		{"WriteTimeout", s.srv.WriteTimeout, 31 * time.Second},
+		{"IdleTimeout", s.srv.IdleTimeout, 61 * time.Second},
+	}
+	for _, tt := range tests {
+		if tt.got != tt.want {
+			t.Errorf("%s = %v, want %v", tt.name, tt.got, tt.want)
+		}
+	}
+	if s.srv.MaxHeaderBytes != maxHeaderBytes {
+		t.Errorf("MaxHeaderBytes = %d, want %d", s.srv.MaxHeaderBytes, maxHeaderBytes)
 	}
 }
 

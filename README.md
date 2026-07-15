@@ -65,6 +65,10 @@ TOML, passed via `-config` (default `config.toml`). See
 - `[miniflux]` is enabled when `webhook_secret` is set. Requests are
   authenticated by the `X-Miniflux-Signature` HMAC-SHA256 header. `feed_ids`
   optionally restricts which feeds are accepted.
+- Timeouts are Go duration strings: `[base]` `read_timeout`,
+  `read_header_timeout`, `write_timeout`, `idle_timeout`, `shutdown_timeout` and
+  `[mattermost]` `timeout`. Each is optional and falls back to its default;
+  `base.write_timeout` must exceed `mattermost.timeout`, otherwise startup fails.
 
 See [`docs/notes.md`](docs/notes.md) for message formats, webhook response codes
 and the v1 trade-offs.

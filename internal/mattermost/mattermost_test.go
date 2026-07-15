@@ -3,11 +3,13 @@ package mattermost
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 	"unicode/utf8"
 )
 
@@ -147,15 +149,52 @@ func TestAPIErrorDoesNotExposeToken(t *testing.T) {
 
 func TestNewRejectsInvalidURL(t *testing.T) {
 	for _, rawURL := range []string{"https:", "ftp://mm.example.com"} {
-		if _, err := New(rawURL, "token"); err == nil {
+		if _, err := New(rawURL, "token", time.Second); err == nil {
 			t.Errorf("New(%q) succeeded, want error", rawURL)
 		}
 	}
 }
 
+func TestNewFallsBackToDefaultTimeout(t *testing.T) {
+	for _, timeout := range []time.Duration{0, -time.Second} {
+		c, err := New("https://mm.example.com", "token", timeout)
+		if err != nil {
+			t.Fatalf("New failed: %v", err)
+		}
+		if c.timeout != defaultTimeout {
+			t.Errorf("New(..., %v) timeout = %v, want default %v", timeout, c.timeout, defaultTimeout)
+		}
+	}
+}
+
+// TestPostHonorsTimeout proves the configured timeout reaches the request
+// context. The handler withholds its response until the test releases it, which
+// happens once the client has already given up.
+func TestPostHonorsTimeout(t *testing.T) {
+	release := make(chan struct{})
+	ts := httptest.NewServer(http.HandlerFunc(func(_ http.ResponseWriter, _ *http.Request) {
+		<-release
+	}))
+	// Defers run last-in-first-out: unblock the handler before Close waits on it.
+	defer ts.Close()
+	defer close(release)
+
+	c, err := New(ts.URL, "token", 100*time.Millisecond)
+	if err != nil {
+		t.Fatalf("New failed: %v", err)
+	}
+	err = c.Post(context.Background(), "chan", "msg")
+	if err == nil {
+		t.Fatal("expected timeout error")
+	}
+	if !errors.Is(err, context.DeadlineExceeded) {
+		t.Errorf("error = %v, want context.DeadlineExceeded", err)
+	}
+}
+
 func mustClient(t *testing.T, baseURL, token string) *Client {
 	t.Helper()
-	c, err := New(baseURL, token)
+	c, err := New(baseURL, token, 5*time.Second)
 	if err != nil {
 		t.Fatalf("New failed: %v", err)
 	}

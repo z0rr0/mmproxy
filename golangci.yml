@@ -25,6 +25,12 @@ linters:
       # layout for a memory win that is irrelevant to this I/O-bound service.
       disable:
         - fieldalignment
+    recvcheck:
+      # UnmarshalText must take a pointer to assign, while String/Timed stay on
+      # the value so fmt verbs work on a config.Duration copy. The stdlib mixes
+      # the same way (netip.Addr, time.Time); only Marshal* is excluded builtin.
+      exclusions:
+        - "*.UnmarshalText"
     tagliatelle:
       case:
         rules:

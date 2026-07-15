@@ -6,18 +6,11 @@ package server
 import (
 	"context"
 	"net/http"
-	"time"
 
 	"github.com/z0rr0/mmproxy/internal/config"
 )
 
-const (
-	readTimeout       = 10 * time.Second
-	readHeaderTimeout = 5 * time.Second
-	writeTimeout      = 30 * time.Second // must exceed the Mattermost request timeout
-	idleTimeout       = 60 * time.Second
-	maxHeaderBytes    = 1 << 20 // 1 MiB
-)
+const maxHeaderBytes = 1 << 20 // 1 MiB
 
 // Poster publishes a message to a Mattermost channel. Defined on the consumer
 // side; satisfied by *mattermost.Client.
@@ -59,10 +52,10 @@ func New(cfg *config.Config, poster Poster, version string) *Server {
 	s.srv = &http.Server{
 		Addr:              cfg.Base.Addr,
 		Handler:           handler,
-		ReadTimeout:       readTimeout,
-		ReadHeaderTimeout: readHeaderTimeout,
-		WriteTimeout:      writeTimeout,
-		IdleTimeout:       idleTimeout,
+		ReadTimeout:       cfg.Base.ReadTimeout.Timed(),
+		ReadHeaderTimeout: cfg.Base.ReadHeaderTimeout.Timed(),
+		WriteTimeout:      cfg.Base.WriteTimeout.Timed(),
+		IdleTimeout:       cfg.Base.IdleTimeout.Timed(),
 		MaxHeaderBytes:    maxHeaderBytes,
 	}
 	return s

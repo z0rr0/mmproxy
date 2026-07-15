@@ -19,8 +19,9 @@ import (
 const (
 	// maxMessageRunes is the Mattermost default post limit (MaxPostSize),
 	// measured in runes.
-	maxMessageRunes  = 16383
-	requestTimeout   = 10 * time.Second
+	maxMessageRunes = 16383
+	// defaultTimeout is the fallback when New receives a non-positive timeout.
+	defaultTimeout   = 10 * time.Second
 	maxResponseBytes = 64 << 10
 )
 
@@ -28,12 +29,15 @@ const (
 type Client struct {
 	baseURL    *url.URL
 	token      string
+	timeout    time.Duration
 	httpClient *http.Client
 }
 
 // New builds a client for baseURL authenticated with a bot or personal access
-// token. The base URL must identify the Mattermost site, without /api/v4.
-func New(baseURL, token string) (*Client, error) {
+// token. The base URL must identify the Mattermost site, without /api/v4. The
+// timeout bounds each API call; a non-positive value falls back to
+// defaultTimeout, since a zero deadline would fail every request.
+func New(baseURL, token string, timeout time.Duration) (*Client, error) {
 	parsed, err := url.Parse(baseURL)
 	if err != nil {
 		return nil, fmt.Errorf("parse mattermost URL: %w", err)
@@ -41,16 +45,20 @@ func New(baseURL, token string) (*Client, error) {
 	if (parsed.Scheme != "http" && parsed.Scheme != "https") || parsed.Host == "" {
 		return nil, errors.New("mattermost URL must have an http or https scheme and host")
 	}
+	if timeout <= 0 {
+		timeout = defaultTimeout
+	}
 	return &Client{
 		baseURL:    parsed,
 		token:      token,
+		timeout:    timeout,
 		httpClient: &http.Client{},
 	}, nil
 }
 
 // Ping verifies connectivity and credentials by fetching the current user.
 func (c *Client) Ping(ctx context.Context) error {
-	ctx, cancel := context.WithTimeout(ctx, requestTimeout)
+	ctx, cancel := context.WithTimeout(ctx, c.timeout)
 	defer cancel()
 
 	req, err := c.newRequest(ctx, http.MethodGet, "/api/v4/users/me", nil)
@@ -83,7 +91,7 @@ func (c *Client) Ping(ctx context.Context) error {
 // Post publishes message to channelID, truncating it to the server's rune
 // limit first.
 func (c *Client) Post(ctx context.Context, channelID, message string) error {
-	ctx, cancel := context.WithTimeout(ctx, requestTimeout)
+	ctx, cancel := context.WithTimeout(ctx, c.timeout)
 	defer cancel()
 
 	body, err := json.Marshal(struct {

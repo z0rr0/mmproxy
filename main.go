@@ -25,8 +25,6 @@ import (
 // version is overridden at build time via -ldflags "-X main.version=...".
 var version = "v0.0.1"
 
-const shutdownTimeout = 10 * time.Second
-
 type mattermostClient interface {
 	Ping(ctx context.Context) error
 	Post(ctx context.Context, channelID, message string) error
@@ -44,7 +42,7 @@ type httpServer interface {
 }
 
 type appDeps struct {
-	newMattermost   func(baseURL, token string) (mattermostClient, error)
+	newMattermost   func(baseURL, token string, timeout time.Duration) (mattermostClient, error)
 	newTelegram     func(token string, handler *telegram.Handler) (telegramBot, error)
 	newHTTPServer   func(cfg *config.Config, poster server.Poster, version string) httpServer
 	shutdownTimeout time.Duration
@@ -78,13 +76,13 @@ func main() {
 func run(cfg *config.Config) error {
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer cancel()
-	return runContext(ctx, cfg, productionDeps())
+	return runContext(ctx, cfg, productionDeps(cfg))
 }
 
-func productionDeps() appDeps {
+func productionDeps(cfg *config.Config) appDeps {
 	return appDeps{
-		newMattermost: func(baseURL, token string) (mattermostClient, error) {
-			return mattermost.New(baseURL, token)
+		newMattermost: func(baseURL, token string, timeout time.Duration) (mattermostClient, error) {
+			return mattermost.New(baseURL, token, timeout)
 		},
 		newTelegram: func(token string, handler *telegram.Handler) (telegramBot, error) {
 			return telegram.NewBot(token, handler)
@@ -92,12 +90,12 @@ func productionDeps() appDeps {
 		newHTTPServer: func(cfg *config.Config, poster server.Poster, version string) httpServer {
 			return server.New(cfg, poster, version)
 		},
-		shutdownTimeout: shutdownTimeout,
+		shutdownTimeout: cfg.Base.ShutdownTimeout.Timed(),
 	}
 }
 
 func runContext(ctx context.Context, cfg *config.Config, deps appDeps) error {
-	mm, err := deps.newMattermost(cfg.Mattermost.URL, cfg.Mattermost.Token)
+	mm, err := deps.newMattermost(cfg.Mattermost.URL, cfg.Mattermost.Token, cfg.Mattermost.Timeout.Timed())
 	if err != nil {
 		return fmt.Errorf("create mattermost client: %w", err)
 	}

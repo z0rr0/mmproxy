@@ -13,7 +13,7 @@ retry-free, standard-library HTTP. See `docs/notes.md` for business logic.
 ```bash
 make test     # gofmt check + go vet + golangci-lint + govulncheck, then go test -race -cover ./...
 make lint     # static analysis only
-make build    # go build with -ldflags "-X main.version=$(git describe ...)"
+make build    # go build with -ldflags: -X main.Version/Revision/BuildDate
 go test -race ./internal/server/   # single package
 ```
 
@@ -25,7 +25,7 @@ sections.
 
 | Package               | Responsibility                                                                      |
 |-----------------------|-------------------------------------------------------------------------------------|
-| `main`                | flags, `setupLogger`, `run()` orchestration, graceful shutdown                      |
+| `main`                | flags (`-config`, `-version`), build metadata + `versionInfo()`, `setupLogger`, `run()` orchestration, graceful shutdown |
 | `internal/config`     | TOML load + `errors.Join` validation, derived allowlist maps, channel normalization |
 | `internal/mattermost` | `model.Client4` wrapper: `New`, `Ping`, `Post`, `Truncate`                          |
 | `internal/telegram`   | bot `Handler`, forwarded-message formatting, `NewBot`                               |
@@ -54,8 +54,24 @@ sections.
 - **Truncation is by runes**, not bytes (`mattermost.Truncate`, limit 16383) —
   safe for multibyte text. Both sources go through `mattermost.Post`, so this is
   centralized.
-- **Version via ldflags**: `var version` in `main` is overwritten by
-  `-X main.version=...`. Keep the variable name if you change the build.
+- **Build metadata via ldflags**: `Version`, `Revision` and `BuildDate` in `main`
+  are overwritten by `-X main.Version=... -X main.Revision=... -X main.BuildDate=...`
+  (see `Makefile`). Keep the variable names if you change the build. `GoVersion` is
+  **not** an ldflag — it comes from `runtime.Version()`. `versionInfo()` joins all
+  four into one line; it feeds `-version`, the startup log and `GET /version`, so
+  `server.New` receives the full line, not a bare version.
+- **The var block needs `//nolint:gochecknoglobals`**: the linter only whitelists
+  the exact lowercase name `version`, so the exported build-metadata variables trip
+  it. The directive must stay on the line immediately before `var (` and in column 1
+  — golangci-lint only expands it over the whole declaration under those conditions.
+  `gofmt` inserts a bare `//` line above it; that is expected and harmless.
+- **`-version` is handled before `config.Load`**, otherwise it would fail on a
+  missing config file instead of printing the version. It prints via
+  `fmt.Fprintln(os.Stdout, ...)` — `forbidigo` bans `fmt.Println`, and the logger
+  is not set up yet at that point.
+- **Makefile tag fallback**: `git tag | sort -V | tail -1 | grep . || echo "v0.0.0"`.
+  The `grep .` matters — CI checks out without tags, and an empty `git tag` would
+  otherwise inject `-X main.Version=` and blank out the default.
 - **`bot.Start(ctx)` blocks** until ctx is cancelled; it runs in a goroutine and
   shutdown cancels ctx then waits on `tgDone`. When Telegram is disabled,
   `tgDone` is closed immediately so shutdown never blocks.

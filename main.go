@@ -13,6 +13,7 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"runtime"
 	"syscall"
 	"time"
 
@@ -22,8 +23,30 @@ import (
 	"github.com/z0rr0/mmproxy/internal/telegram"
 )
 
-// version is overridden at build time via -ldflags "-X main.version=...".
-var version = "v0.0.1"
+// name is the service name shown in the build info line.
+const name = "MMProxy"
+
+// Build metadata: Version, Revision and BuildDate are injected at build time via
+// -ldflags "-X main.Version=... -X main.Revision=... -X main.BuildDate=...", so
+// they must stay package-level variables — the linker cannot write anywhere else.
+//
+//nolint:gochecknoglobals // written by the linker at link time
+var (
+	// Version is a git version.
+	Version = "v0.0.0"
+	// Revision is a revision number.
+	Revision = "git:0000000"
+	// BuildDate is a build date.
+	BuildDate = "1970-01-01T00:00:00"
+	// GoVersion is a runtime Go language version.
+	GoVersion = runtime.Version() // "go1.00.0"
+)
+
+// versionInfo returns the one-line build info, e.g.
+// "MMProxy: v0.0.1 git:195a144 go1.26.5 2026-07-15T09:34:03".
+func versionInfo() string {
+	return fmt.Sprintf("%s: %s %s %s %s", name, Version, Revision, GoVersion, BuildDate)
+}
 
 type mattermostClient interface {
 	Ping(ctx context.Context) error
@@ -50,7 +73,15 @@ type appDeps struct {
 
 func main() {
 	configPath := flag.String("config", "config.toml", "path to TOML config file")
+	showVersion := flag.Bool("version", false, "show version and exit")
 	flag.Parse()
+
+	// Must run before config.Load: -version has to work without a config file.
+	if *showVersion {
+		_, _ = fmt.Fprintln(os.Stdout, versionInfo())
+		flag.PrintDefaults()
+		return
+	}
 
 	cfg, err := config.Load(*configPath)
 	if err != nil {
@@ -60,7 +91,10 @@ func main() {
 
 	setupLogger(os.Stdout, cfg.Base.Debug)
 	slog.Info("starting",
-		"version", version,
+		"version", Version,
+		"revision", Revision,
+		"go", GoVersion,
+		"build", BuildDate,
 		"addr", cfg.Base.Addr,
 		"telegram", cfg.Telegram.Enabled(),
 		"miniflux", cfg.Miniflux.Enabled(),
@@ -123,7 +157,7 @@ func runContext(ctx context.Context, cfg *config.Config, deps appDeps) error {
 		close(tgDone)
 	}
 
-	srv := deps.newHTTPServer(cfg, mm, version)
+	srv := deps.newHTTPServer(cfg, mm, versionInfo())
 	listenDone := make(chan error, 1)
 	go func() {
 		slog.Info("http server listening", "addr", srv.Addr())

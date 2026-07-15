@@ -18,7 +18,7 @@ retry-free: delivery errors are returned to the caller.
 | Method & path   | Purpose |
 |-----------------|---------|
 | `GET /health`   | Liveness probe, returns `200 OK`. |
-| `GET /version`  | Service version (injected at build time). |
+| `GET /version`  | Build info line: name, version, revision, Go version, build date. |
 | `POST /miniflux`| Miniflux webhook receiver (only when the source is enabled). |
 
 ## Quick start
@@ -30,6 +30,7 @@ $EDITOR config.toml            # fill in Mattermost / Telegram / Miniflux values
 
 # 2. Build and run
 make build
+./mmproxy -version                # build info, no config needed
 ./mmproxy -config config.toml
 ```
 
@@ -37,14 +38,16 @@ Check it:
 
 ```bash
 curl -i localhost:8080/health     # 200 OK
-curl -i localhost:8080/version
+curl -s localhost:8080/version    # MMProxy: v0.0.1 git:195a144 go1.26.5 2026-07-15T09:39:45
 ```
 
 ### Docker
 
 ```bash
 cp docs/config.toml config.toml   # edit it, then:
-LDFLAGS="-X main.version=$(git describe --tags --always --dirty)" docker compose up -d --build
+LDFLAGS="-X main.Version=$(git tag | sort -V | tail -1) \
+-X main.Revision=git:$(git rev-parse --short HEAD) \
+-X main.BuildDate=$(date -u +%FT%T)" docker compose up -d --build
 ```
 
 The compose file mounts `./config.toml` read-only at `/data/config.toml`, checks
@@ -80,7 +83,7 @@ make fmt      # gofmt
 make lint     # gofmt check + go vet + golangci-lint + non-blocking govulncheck
 make vuln     # informational govulncheck (never blocks the build)
 make test     # lint + go test -race -cover ./...
-make build    # binary with version injected via ldflags
+make build    # binary with version, revision and build date injected via ldflags
 make docker   # build the container image
 make clean
 ```

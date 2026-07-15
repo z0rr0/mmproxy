@@ -1,6 +1,8 @@
 NAME=mmproxy
-VERSION=$(shell git describe --tags --always --dirty 2>/dev/null || echo "v0.0.1")
-LDFLAGS=-X main.version=$(VERSION)
+TS=$(shell date -u +"%FT%T")
+TAG=$(shell git tag | sort -V | tail -1 | grep . || echo "v0.0.0")
+REVISION=$(shell git rev-parse --short HEAD 2>/dev/null || echo "0000000")
+LDFLAGS=-X main.Version=$(TAG) -X main.Revision=git:$(REVISION) -X main.BuildDate=$(TS)
 
 .PHONY: all fmt lint vuln test build run docker clean
 

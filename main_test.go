@@ -3,6 +3,8 @@ package main
 import (
 	"context"
 	"errors"
+	"runtime"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -211,6 +213,44 @@ func TestRunContextTelegramDisabledDoesNotBlock(t *testing.T) {
 	cancel()
 	if err := runContext(ctx, cfg, deps); err != nil {
 		t.Fatalf("runContext failed: %v", err)
+	}
+}
+
+func TestVersionInfo(t *testing.T) {
+	want := "MMProxy: " + Version + " " + Revision + " " + runtime.Version() + " " + BuildDate
+	got := versionInfo()
+	if got != want {
+		t.Errorf("versionInfo() = %q, want %q", got, want)
+	}
+	// The line goes into an HTTP response body verbatim.
+	if strings.Contains(got, "\n") {
+		t.Errorf("versionInfo() must be a single line, got %q", got)
+	}
+}
+
+// TestRunContextPassesVersionInfoToHTTPServer pins that the server gets the full
+// build line, not a bare version.
+func TestRunContextPassesVersionInfoToHTTPServer(t *testing.T) {
+	cfg := testConfig(false)
+	srv := &fakeHTTPServer{
+		started:         make(chan struct{}),
+		done:            make(chan struct{}),
+		shutdownStarted: make(chan struct{}),
+	}
+	deps := testDeps(&fakeMattermost{}, nil, srv)
+	var got string
+	deps.newHTTPServer = func(_ *config.Config, _ server.Poster, version string) httpServer {
+		got = version
+		return srv
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	if err := runContext(ctx, cfg, deps); err != nil {
+		t.Fatalf("runContext failed: %v", err)
+	}
+	if want := versionInfo(); got != want {
+		t.Errorf("version passed to server.New = %q, want %q", got, want)
 	}
 }
 

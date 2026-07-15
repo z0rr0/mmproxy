@@ -45,7 +45,7 @@ curl -s localhost:8080/version    # MMProxy: v0.0.1 git:195a144 go1.26.5 2026-07
 
 ```bash
 cp docs/config.toml config.toml   # edit it, then:
-LDFLAGS="-X main.Version=$(git tag | sort -V | tail -1) \
+GO_LDFLAGS="-X main.Version=$(git tag | sort -V | tail -1) \
 -X main.Revision=git:$(git rev-parse --short HEAD) \
 -X main.BuildDate=$(date -u +%FT%T)" docker compose up -d --build
 ```

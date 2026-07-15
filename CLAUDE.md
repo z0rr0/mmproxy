@@ -13,7 +13,8 @@ retry-free, standard-library HTTP. See `docs/notes.md` for business logic.
 ```bash
 make test     # gofmt check + go vet + golangci-lint + govulncheck, then go test -race -cover ./...
 make lint     # static analysis only
-make build    # go build with -ldflags: -X main.Version/Revision/BuildDate
+make build    # go build with -ldflags: -X main.Version/Revision/BuildDate (native host arch)
+make dist     # cross-compile PLATFORMS (darwin/arm64, linux/amd64) into dist/
 go test -race ./internal/server/   # single package
 ```
 

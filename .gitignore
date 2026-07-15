@@ -31,6 +31,9 @@ go.work.sum
 /mmproxy
 /config.toml
 
+# Cross-compiled release binaries (make dist)
+/dist/
+
 # Editor/IDE
 # .idea/
 # .vscode/

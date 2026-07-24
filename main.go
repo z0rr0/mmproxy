@@ -140,6 +140,7 @@ func runContext(ctx context.Context, cfg *config.Config, deps appDeps) error {
 	var tg telegramBot
 	stopTelegram := func() {}
 	tgDone := make(chan struct{})
+
 	if cfg.Telegram.Enabled() {
 		handler := telegram.NewHandler(mm, cfg.Telegram.ChannelID, cfg.Telegram.AllowedIDs)
 		tg, err = deps.newTelegram(cfg.Telegram.Token, handler)
@@ -166,9 +167,9 @@ func runContext(ctx context.Context, cfg *config.Config, deps appDeps) error {
 
 	var serveErr error
 	select {
-	case err := <-listenDone:
-		if err != nil && !errors.Is(err, http.ErrServerClosed) {
-			serveErr = err
+	case listenErr := <-listenDone:
+		if listenErr != nil && !errors.Is(listenErr, http.ErrServerClosed) {
+			serveErr = listenErr
 		}
 	case <-ctx.Done():
 		slog.Info("shutdown signal received")
@@ -196,8 +197,9 @@ func runContext(ctx context.Context, cfg *config.Config, deps appDeps) error {
 	case <-shutdownCtx.Done():
 		slog.Error("http server shutdown error", "error", shutdownCtx.Err())
 	}
+
 	if tg != nil {
-		if err := tg.Shutdown(shutdownCtx); err != nil {
+		if err = tg.Shutdown(shutdownCtx); err != nil {
 			slog.Error("telegram handlers shutdown error", "error", err)
 		}
 	}

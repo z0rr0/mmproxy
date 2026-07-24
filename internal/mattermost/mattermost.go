@@ -42,12 +42,15 @@ func New(baseURL, token string, timeout time.Duration) (*Client, error) {
 	if err != nil {
 		return nil, fmt.Errorf("parse mattermost URL: %w", err)
 	}
+
 	if (parsed.Scheme != "http" && parsed.Scheme != "https") || parsed.Host == "" {
 		return nil, errors.New("mattermost URL must have an http or https scheme and host")
 	}
+
 	if timeout <= 0 {
 		timeout = defaultTimeout
 	}
+
 	return &Client{
 		baseURL:    parsed,
 		token:      token,
@@ -65,6 +68,7 @@ func (c *Client) Ping(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("mattermost ping: %w", err)
 	}
+
 	resp, err := c.httpClient.Do(req)
 	if err != nil {
 		return fmt.Errorf("mattermost ping: %w", err)
@@ -104,10 +108,12 @@ func (c *Client) Post(ctx context.Context, channelID, message string) error {
 	if err != nil {
 		return fmt.Errorf("marshal mattermost post: %w", err)
 	}
+
 	req, err := c.newRequest(ctx, http.MethodPost, "/api/v4/posts", bytes.NewReader(body))
 	if err != nil {
 		return fmt.Errorf("mattermost create post: %w", err)
 	}
+
 	resp, err := c.httpClient.Do(req)
 	if err != nil {
 		return fmt.Errorf("mattermost create post: %w", err)
@@ -117,7 +123,9 @@ func (c *Client) Post(ctx context.Context, channelID, message string) error {
 	if err = responseError(resp); err != nil {
 		return fmt.Errorf("mattermost create post: %w", err)
 	}
-	_, _ = io.Copy(io.Discard, io.LimitReader(resp.Body, maxResponseBytes))
+	if _, err = io.Copy(io.Discard, io.LimitReader(resp.Body, maxResponseBytes)); err != nil {
+		slog.Error("mattermost io copy", "error", err)
+	}
 	return nil
 }
 

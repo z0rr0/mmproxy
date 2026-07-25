@@ -80,6 +80,36 @@ func TestLoadValid(t *testing.T) {
 			t.Errorf("%s = %v, want default %v", d.name, d.got, d.want)
 		}
 	}
+	if cfg.Mattermost.MaxMessageRunes != defaultMaxMessageRunes {
+		t.Errorf("max_message_runes = %d, want default %d",
+			cfg.Mattermost.MaxMessageRunes, defaultMaxMessageRunes)
+	}
+}
+
+func TestLoadMaxMessageRunes(t *testing.T) {
+	tests := []struct {
+		name  string
+		value string
+		want  int
+	}{
+		{"explicit", "max_message_runes = 4000", 4000},
+		// An explicit zero is indistinguishable from an omitted key.
+		{"explicit zero", "max_message_runes = 0", defaultMaxMessageRunes},
+		{"omitted", "", defaultMaxMessageRunes},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			content := strings.Replace(validConfig, "channel_id = \"shared-channel\"",
+				"channel_id = \"shared-channel\"\n"+tt.value, 1)
+			cfg, err := Load(writeConfig(t, content))
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if cfg.Mattermost.MaxMessageRunes != tt.want {
+				t.Errorf("max_message_runes = %d, want %d", cfg.Mattermost.MaxMessageRunes, tt.want)
+			}
+		})
+	}
 }
 
 func TestLoadTimeouts(t *testing.T) {
@@ -256,6 +286,20 @@ token = "tg"
 allowed_users = [1]
 `,
 			want: "url host is required",
+		},
+		{
+			name: "negative max_message_runes",
+			content: `
+[mattermost]
+url = "https://mm.example.com"
+token = "t"
+channel_id = "c"
+max_message_runes = -1
+[telegram]
+token = "tg"
+allowed_users = [1]
+`,
+			want: "max_message_runes must be positive, got -1",
 		},
 		{
 			name: "no sources enabled",

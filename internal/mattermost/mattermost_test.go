@@ -78,6 +78,39 @@ func TestPost(t *testing.T) {
 	}
 }
 
+// TestPostTruncatesToConfiguredLimit proves the rune limit passed to New reaches
+// the wire, instead of the package default.
+func TestPostTruncatesToConfiguredLimit(t *testing.T) {
+	var gotMessage string
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, _ := io.ReadAll(r.Body)
+		var post struct {
+			Message string `json:"message"`
+		}
+		_ = json.Unmarshal(body, &post)
+		gotMessage = post.Message
+		w.WriteHeader(http.StatusCreated)
+		_, _ = io.WriteString(w, `{"id":"post1"}`)
+	}))
+	defer ts.Close()
+
+	const maxRunes = 5
+	c, err := New(ts.URL, "token", 5*time.Second, maxRunes)
+	if err != nil {
+		t.Fatalf("New failed: %v", err)
+	}
+	// Cyrillic input also checks that the cut is by runes, not bytes.
+	if err = c.Post(context.Background(), "chan", "привет мир"); err != nil {
+		t.Fatalf("Post failed: %v", err)
+	}
+	if gotMessage != "прив…" {
+		t.Errorf("message = %q, want %q", gotMessage, "прив…")
+	}
+	if n := utf8.RuneCountInString(gotMessage); n > maxRunes {
+		t.Errorf("message has %d runes, want at most %d", n, maxRunes)
+	}
+}
+
 func TestPostServerError(t *testing.T) {
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		http.Error(w, `{"message":"boom"}`, http.StatusInternalServerError)
@@ -149,7 +182,7 @@ func TestAPIErrorDoesNotExposeToken(t *testing.T) {
 
 func TestNewRejectsInvalidURL(t *testing.T) {
 	for _, rawURL := range []string{"https:", "ftp://mm.example.com"} {
-		if _, err := New(rawURL, "token", time.Second); err == nil {
+		if _, err := New(rawURL, "token", time.Second, defaultMaxMessageRunes); err == nil {
 			t.Errorf("New(%q) succeeded, want error", rawURL)
 		}
 	}
@@ -157,12 +190,24 @@ func TestNewRejectsInvalidURL(t *testing.T) {
 
 func TestNewFallsBackToDefaultTimeout(t *testing.T) {
 	for _, timeout := range []time.Duration{0, -time.Second} {
-		c, err := New("https://mm.example.com", "token", timeout)
+		c, err := New("https://mm.example.com", "token", timeout, defaultMaxMessageRunes)
 		if err != nil {
 			t.Fatalf("New failed: %v", err)
 		}
 		if c.timeout != defaultTimeout {
 			t.Errorf("New(..., %v) timeout = %v, want default %v", timeout, c.timeout, defaultTimeout)
+		}
+	}
+}
+
+func TestNewFallsBackToDefaultMaxRunes(t *testing.T) {
+	for _, maxRunes := range []int{0, -1} {
+		c, err := New("https://mm.example.com", "token", time.Second, maxRunes)
+		if err != nil {
+			t.Fatalf("New failed: %v", err)
+		}
+		if c.maxRunes != defaultMaxMessageRunes {
+			t.Errorf("New(..., %d) maxRunes = %d, want default %d", maxRunes, c.maxRunes, defaultMaxMessageRunes)
 		}
 	}
 }
@@ -179,7 +224,7 @@ func TestPostHonorsTimeout(t *testing.T) {
 	defer ts.Close()
 	defer close(release)
 
-	c, err := New(ts.URL, "token", 100*time.Millisecond)
+	c, err := New(ts.URL, "token", 100*time.Millisecond, defaultMaxMessageRunes)
 	if err != nil {
 		t.Fatalf("New failed: %v", err)
 	}
@@ -194,7 +239,7 @@ func TestPostHonorsTimeout(t *testing.T) {
 
 func mustClient(t *testing.T, baseURL, token string) *Client {
 	t.Helper()
-	c, err := New(baseURL, token, 5*time.Second)
+	c, err := New(baseURL, token, 5*time.Second, defaultMaxMessageRunes)
 	if err != nil {
 		t.Fatalf("New failed: %v", err)
 	}

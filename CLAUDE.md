@@ -59,9 +59,13 @@ the real packages.
 - **HMAC over the raw body, before JSON**: `handleMiniflux` reads the full body,
   verifies `X-Miniflux-Signature`, and only then unmarshals. Do not reorder — the
   signature covers the exact bytes and unauthenticated input must not be parsed.
-- **Truncation is by runes**, not bytes (`mattermost.Truncate`, limit 16383) —
-  safe for multibyte text. Both sources go through `mattermost.Post`, so this is
-  centralized.
+- **Truncation is by runes**, not bytes (`mattermost.Truncate`) — safe for
+  multibyte text. Both sources go through `mattermost.Post`, so this is
+  centralized. The limit comes from `[mattermost] max_message_runes`; 16383 is
+  duplicated as a default in **two** places — `config.defaultMaxMessageRunes`
+  (applied in `applyDefaults`) and `mattermost.defaultMaxMessageRunes` (the
+  fallback in `New` for non-positive input, so the package stays usable without
+  `config`, same as `defaultTimeout`). Keep them in sync.
 - **Build metadata via ldflags**: `Version`, `Revision` and `BuildDate` in `main`
   are overwritten by `-X main.Version=... -X main.Revision=... -X main.BuildDate=...`
   (see `Makefile`). Keep the variable names if you change the build. `GoVersion` is

@@ -17,9 +17,9 @@ import (
 )
 
 const (
-	// maxMessageRunes is the Mattermost default post limit (MaxPostSize),
-	// measured in runes.
-	maxMessageRunes = 16383
+	// defaultMaxMessageRunes is the fallback when New receives a non-positive
+	// rune limit. It matches the Mattermost default post limit (MaxPostSize).
+	defaultMaxMessageRunes = 16383
 	// defaultTimeout is the fallback when New receives a non-positive timeout.
 	defaultTimeout   = 10 * time.Second
 	maxResponseBytes = 64 << 10
@@ -30,14 +30,18 @@ type Client struct {
 	baseURL    *url.URL
 	token      string
 	timeout    time.Duration
+	maxRunes   int
 	httpClient *http.Client
 }
 
 // New builds a client for baseURL authenticated with a bot or personal access
 // token. The base URL must identify the Mattermost site, without /api/v4. The
 // timeout bounds each API call; a non-positive value falls back to
-// defaultTimeout, since a zero deadline would fail every request.
-func New(baseURL, token string, timeout time.Duration) (*Client, error) {
+// defaultTimeout, since a zero deadline would fail every request. maxRunes caps
+// the length of a post in runes and follows the same rule: a non-positive value
+// falls back to defaultMaxMessageRunes, since a zero limit would drop every
+// message.
+func New(baseURL, token string, timeout time.Duration, maxRunes int) (*Client, error) {
 	parsed, err := url.Parse(baseURL)
 	if err != nil {
 		return nil, fmt.Errorf("parse mattermost URL: %w", err)
@@ -51,10 +55,15 @@ func New(baseURL, token string, timeout time.Duration) (*Client, error) {
 		timeout = defaultTimeout
 	}
 
+	if maxRunes <= 0 {
+		maxRunes = defaultMaxMessageRunes
+	}
+
 	return &Client{
 		baseURL:    parsed,
 		token:      token,
 		timeout:    timeout,
+		maxRunes:   maxRunes,
 		httpClient: &http.Client{},
 	}, nil
 }
@@ -92,7 +101,7 @@ func (c *Client) Ping(ctx context.Context) error {
 	return nil
 }
 
-// Post publishes message to channelID, truncating it to the server's rune
+// Post publishes message to channelID, truncating it to the configured rune
 // limit first.
 func (c *Client) Post(ctx context.Context, channelID, message string) error {
 	ctx, cancel := context.WithTimeout(ctx, c.timeout)
@@ -103,7 +112,7 @@ func (c *Client) Post(ctx context.Context, channelID, message string) error {
 		Message   string `json:"message"`
 	}{
 		ChannelID: channelID,
-		Message:   Truncate(message, maxMessageRunes),
+		Message:   Truncate(message, c.maxRunes),
 	})
 	if err != nil {
 		return fmt.Errorf("marshal mattermost post: %w", err)

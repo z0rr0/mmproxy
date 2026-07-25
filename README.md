@@ -72,6 +72,10 @@ TOML, passed via `-config` (default `config.toml`). See
   `read_header_timeout`, `write_timeout`, `idle_timeout`, `shutdown_timeout` and
   `[mattermost]` `timeout`. Each is optional and falls back to its default;
   `base.write_timeout` must exceed `mattermost.timeout`, otherwise startup fails.
+- `[mattermost]` `max_message_runes` caps a post length in runes (not bytes);
+  longer messages are truncated with an ellipsis. Optional, default 16383 — the
+  Mattermost `MaxPostSize` default. Raise it to match a server configured for
+  longer posts. Like the timeouts, an omitted key or `0` means the default.
 
 See [`docs/notes.md`](docs/notes.md) for message formats, webhook response codes
 and the v1 trade-offs.

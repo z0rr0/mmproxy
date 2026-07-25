@@ -23,6 +23,8 @@ const (
 	defaultIdleTimeout       = 60 * time.Second
 	defaultShutdownTimeout   = 10 * time.Second
 	defaultMattermostTimeout = 10 * time.Second
+	// defaultMaxMessageRunes is the Mattermost default post limit (MaxPostSize), measured in runes.
+	defaultMaxMessageRunes = 16383
 )
 
 // Config is the root configuration structure parsed from TOML.
@@ -59,6 +61,9 @@ type Mattermost struct {
 	ChannelID string `toml:"channel_id"`
 	// Timeout is the per-request deadline for Mattermost API calls.
 	Timeout Duration `toml:"timeout"`
+	// MaxMessageRunes caps a post length in runes (not bytes); longer messages
+	// are truncated. It mirrors the server's MaxPostSize setting.
+	MaxMessageRunes int `toml:"max_message_runes"`
 }
 
 // Telegram holds the Telegram bot source configuration. An empty Token disables
@@ -104,9 +109,9 @@ func Load(path string) (*Config, error) {
 	return cfg, nil
 }
 
-// applyDefaults fills in unset fields. A zero duration means "not set", so an
+// applyDefaults fills in unset fields. A zero value means "not set", so an
 // explicit "0s" also resolves to the default: there is no way to disable a
-// timeout.
+// timeout. The same rule applies to max_message_runes = 0.
 func (c *Config) applyDefaults() {
 	if c.Base.Addr == "" {
 		c.Base.Addr = defaultAddr
@@ -128,6 +133,9 @@ func (c *Config) applyDefaults() {
 	}
 	if c.Mattermost.Timeout == 0 {
 		c.Mattermost.Timeout = Duration(defaultMattermostTimeout)
+	}
+	if c.Mattermost.MaxMessageRunes == 0 {
+		c.Mattermost.MaxMessageRunes = defaultMaxMessageRunes
 	}
 }
 
@@ -163,6 +171,9 @@ func (m *Mattermost) validate() error {
 	}
 	if m.ChannelID == "" {
 		errs = append(errs, errors.New("mattermost: channel_id is required"))
+	}
+	if m.MaxMessageRunes < 0 {
+		errs = append(errs, fmt.Errorf("mattermost: max_message_runes must be positive, got %d", m.MaxMessageRunes))
 	}
 	return errors.Join(errs...)
 }

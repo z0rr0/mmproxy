@@ -65,7 +65,7 @@ type httpServer interface {
 }
 
 type appDeps struct {
-	newMattermost   func(baseURL, token string, timeout time.Duration) (mattermostClient, error)
+	newMattermost   func(baseURL, token string, timeout time.Duration, maxRunes int) (mattermostClient, error)
 	newTelegram     func(token string, handler *telegram.Handler) (telegramBot, error)
 	newHTTPServer   func(cfg *config.Config, poster server.Poster, version string) httpServer
 	shutdownTimeout time.Duration
@@ -115,8 +115,8 @@ func run(cfg *config.Config) error {
 
 func productionDeps(cfg *config.Config) appDeps {
 	return appDeps{
-		newMattermost: func(baseURL, token string, timeout time.Duration) (mattermostClient, error) {
-			return mattermost.New(baseURL, token, timeout)
+		newMattermost: func(baseURL, token string, timeout time.Duration, maxRunes int) (mattermostClient, error) {
+			return mattermost.New(baseURL, token, timeout, maxRunes)
 		},
 		newTelegram: func(token string, handler *telegram.Handler) (telegramBot, error) {
 			return telegram.NewBot(token, handler)
@@ -129,7 +129,9 @@ func productionDeps(cfg *config.Config) appDeps {
 }
 
 func runContext(ctx context.Context, cfg *config.Config, deps appDeps) error {
-	mm, err := deps.newMattermost(cfg.Mattermost.URL, cfg.Mattermost.Token, cfg.Mattermost.Timeout.Timed())
+	mm, err := deps.newMattermost(
+		cfg.Mattermost.URL, cfg.Mattermost.Token, cfg.Mattermost.Timeout.Timed(), cfg.Mattermost.MaxMessageRunes,
+	)
 	if err != nil {
 		return fmt.Errorf("create mattermost client: %w", err)
 	}

@@ -36,6 +36,8 @@ channel_id = "shared-channel-id"
 # Per-request timeout for Mattermost API calls (startup ping and posts).
 # Must be below base.write_timeout. Default "10s".
 timeout = "10s"
+# Max post length in runes (not bytes)
+max_message_runes = 16383
 
 [telegram]
 # Empty token disables the Telegram source.

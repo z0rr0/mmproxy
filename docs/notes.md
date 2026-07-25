@@ -95,8 +95,9 @@ This is an accepted v1 trade-off of the synchronous, retry-free design.
 ## Deliberate v1 trade-offs
 
 - Synchronous, **no retries, no queue, no metrics**.
-- Long messages are truncated to Mattermost's 16383-rune limit (by runes, not
-  bytes — safe for multibyte text).
+- Long messages are truncated to `mattermost.max_message_runes` (by runes, not
+  bytes — safe for multibyte text). It defaults to 16383, Mattermost's own
+  `MaxPostSize` default, and is configurable for servers that differ.
 - Telegram media is not transferred; only text/caption.
 - Miniflux entry HTML `content` is not published.
 - Startup is **fail-fast**: if the Mattermost `GetMe` health check fails (bad

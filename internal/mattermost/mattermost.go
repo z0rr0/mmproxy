@@ -140,10 +140,12 @@ func (c *Client) newRequest(ctx context.Context, method, apiPath string, body io
 	if err != nil {
 		return nil, fmt.Errorf("build request: %w", err)
 	}
+
 	req.Header.Set("Authorization", "Bearer "+c.token)
 	if body != nil {
 		req.Header.Set("Content-Type", "application/json")
 	}
+
 	return req, nil
 }
 
@@ -151,16 +153,20 @@ func responseError(resp *http.Response) error {
 	if resp.StatusCode >= http.StatusOK && resp.StatusCode < http.StatusMultipleChoices {
 		return nil
 	}
+
 	body, err := io.ReadAll(io.LimitReader(resp.Body, maxResponseBytes))
 	if err != nil {
 		return fmt.Errorf("mattermost returned %s; read error response: %w", resp.Status, err)
 	}
+
 	var apiErr struct {
 		Message string `json:"message"`
 	}
+
 	if json.Unmarshal(body, &apiErr) == nil && apiErr.Message != "" {
 		return fmt.Errorf("mattermost returned %s: %s", resp.Status, apiErr.Message)
 	}
+
 	return fmt.Errorf("mattermost returned %s", resp.Status)
 }
 
@@ -181,12 +187,15 @@ func Truncate(s string, limit int) string {
 	if limit <= 0 {
 		return ""
 	}
+
 	runes := []rune(s)
 	if len(runes) <= limit {
 		return s
 	}
+
 	if limit <= 1 {
 		return string(runes[:limit])
 	}
+
 	return string(runes[:limit-1]) + "…"
 }

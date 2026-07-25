@@ -186,13 +186,17 @@ func runContext(ctx context.Context, cfg *config.Config, deps appDeps) error {
 	stopTelegram()
 	select {
 	case <-tgDone:
+		slog.Info("telegram polling shutdown")
 	case <-shutdownCtx.Done():
 		slog.Error("telegram polling shutdown error", "error", shutdownCtx.Err())
 	}
+
 	select {
 	case shutdownErr := <-httpShutdownDone:
 		if shutdownErr != nil {
 			slog.Error("http server shutdown error", "error", shutdownErr)
+		} else {
+			slog.Info("http server shutdown")
 		}
 	case <-shutdownCtx.Done():
 		slog.Error("http server shutdown error", "error", shutdownCtx.Err())
@@ -201,6 +205,8 @@ func runContext(ctx context.Context, cfg *config.Config, deps appDeps) error {
 	if tg != nil {
 		if err = tg.Shutdown(shutdownCtx); err != nil {
 			slog.Error("telegram handlers shutdown error", "error", err)
+		} else {
+			slog.Info("telegram handlers shutdown")
 		}
 	}
 

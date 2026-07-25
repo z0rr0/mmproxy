@@ -26,12 +26,17 @@ sections.
 
 | Package               | Responsibility                                                                      |
 |-----------------------|-------------------------------------------------------------------------------------|
-| `main`                | flags (`-config`, `-version`), build metadata + `versionInfo()`, `setupLogger`, `run()` orchestration, graceful shutdown |
+| `main`                | flags (`-config`, `-version`), build metadata + `versionInfo()`, `setupLogger`, `run()` → `runContext(ctx, cfg, appDeps)` orchestration, graceful shutdown |
 | `internal/config`     | TOML load + `errors.Join` validation, derived allowlist maps, channel normalization |
-| `internal/mattermost` | `model.Client4` wrapper: `New`, `Ping`, `Post`, `Truncate`                          |
+| `internal/mattermost` | stdlib `net/http` client for the two endpoints we use: `New`, `Ping`, `Post`, `Truncate` |
+| `internal/markdown`   | `EscapeText`: flattens and escapes single-line labels embedded in Markdown          |
 | `internal/telegram`   | bot `Handler`, forwarded-message formatting, `NewBot`                               |
 | `internal/miniflux`   | webhook types, `ValidSignature` (HMAC), `FormatPost`                                |
 | `internal/server`     | HTTP mux, health/version/miniflux handlers, logging + recover middleware            |
+
+`appDeps` (`main.go`) holds the constructor seams — `newMattermost`, `newTelegram`,
+`newHTTPServer` — so `runContext` can be tested against fakes; `productionDeps` wires
+the real packages.
 
 ## Conventions
 
@@ -41,8 +46,10 @@ sections.
 - **Thin `main` → `run(cfg) error`**: `os.Exit` only at the top level.
 - **One global `slog`**: `setupLogger` calls `slog.SetDefault`; everything else
   uses `slog.Info`/`Warn`/`Error` directly.
-- **Middleware order** in `server.New`: `RecoverMiddleware(LoggingMiddleware(mux))`
-  — recover is outermost so it also catches panics in logging.
+- **Middleware order** in `server.New`: `RecoverMiddleware(LoggingMiddleware(mux))`.
+  `LoggingMiddleware` recovers handler panics itself, because it has to record the
+  final status of the request it is logging; `RecoverMiddleware` stays outermost as a
+  last line of defense for panics raised by logging.
 - **Channel normalization** happens in `config`: empty per-source `channel_id`
   is resolved to the shared one during validation, so handlers never see the
   fallback.
@@ -76,9 +83,11 @@ sections.
 - **`bot.Start(ctx)` blocks** until ctx is cancelled; it runs in a goroutine and
   shutdown cancels ctx then waits on `tgDone`. When Telegram is disabled,
   `tgDone` is closed immediately so shutdown never blocks.
-- **`model.Client4` is concurrency-safe** (wraps an `http.Client`); the Telegram
-  handler and the webhook can post simultaneously. `SetToken` runs once at
-  construction, before goroutines start.
+- **`*mattermost.Client` is concurrency-safe**: it holds one `*http.Client`, and the
+  token lives in a field that `newRequest` turns into an `Authorization` header per
+  call — nothing is mutated after construction, so the Telegram handler and the
+  webhook can post simultaneously. The per-call deadline comes from
+  `context.WithTimeout` inside `Ping`/`Post`, not from `http.Client.Timeout`.
 - **Fail-fast startup**: `run` calls `mm.Ping` (GetMe) and returns on failure, so
   a bad URL/token or down Mattermost aborts the process.
 - **Timeouts come from config**, as `config.Duration` (a `time.Duration` with
@@ -90,8 +99,11 @@ sections.
   `server.go` and matters because the webhook posts synchronously inside the
   handler. `mattermost.New` keeps its own `defaultTimeout` fallback for
   non-positive input, so the package stays usable without `config`.
-- **Mattermost SDK is heavy**: `server/public` pulls ~40 transitive modules.
-  `govulncheck` reports vulnerabilities in those imports that our code does not
-  call — expected.
+- **No Mattermost SDK**: the client is ~190 lines of stdlib `net/http` against
+  `GET /api/v4/users/me` and `POST /api/v4/posts`, so `go.mod` stays at two direct
+  dependencies (`go-telegram/bot`, `go-toml/v2`). Keep it that way — pulling in
+  `server/public` would add ~40 transitive modules for two endpoints.
+  `govulncheck` is advisory in both places it runs: the `-` prefix on the `vuln`
+  target in the Makefile and `continue-on-error: true` in CI.
 - Webhook response codes are specified in `docs/notes.md`; `server_test.go`
   pins each one.

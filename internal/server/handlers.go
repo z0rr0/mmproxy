@@ -73,6 +73,7 @@ func (s *Server) handleMiniflux(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeText(w, http.StatusOK, "OK")
+	slog.Info("miniflux post", "feed_id", event.Feed.ID)
 }
 
 // feedAllowed reports whether the feed passes the configured allowlist. An empty

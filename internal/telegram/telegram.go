@@ -112,8 +112,7 @@ func (h *Handler) Handle(ctx context.Context, api BotAPI, update *models.Update)
 	if _, ok := h.allowed[msg.From.ID]; !ok {
 		// Do not reply to strangers: a silent drop avoids turning the bot into
 		// a spam amplifier.
-		slog.Warn("telegram: unauthorized user",
-			"user_id", msg.From.ID, "username", msg.From.Username)
+		slog.Warn("telegram: unauthorized user", "user_id", msg.From.ID, "username", msg.From.Username)
 		return
 	}
 
@@ -149,6 +148,8 @@ func (h *Handler) reply(ctx context.Context, api BotAPI, msg *models.Message, te
 	})
 	if err != nil {
 		slog.Error("telegram: send reply failed", "error", err, "chat_id", msg.Chat.ID)
+	} else {
+		slog.Info("telegram: send reply", "chat_id", msg.Chat.ID)
 	}
 }
 

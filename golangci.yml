@@ -2,7 +2,7 @@ version: "2"
 run:
   go: "1.26"
   timeout: 3m
-  tests: false
+  tests: true
 linters:
   default: all
   disable:
@@ -31,6 +31,10 @@ linters:
       # the same way (netip.Addr, time.Time); only Marshal* is excluded builtin.
       exclusions:
         - "*.UnmarshalText"
+    goconst:
+      # Test tables repeat the same literal by design, and counting those
+      # occurrences also drags production strings over the threshold.
+      ignore-tests: true
     tagliatelle:
       case:
         rules:
@@ -48,6 +52,20 @@ linters:
     generated: lax
     paths:
       - docs
+    rules:
+      # run.tests is on so errcheck guards the test files too. These three have
+      # no useful reading there and are the only ones that fire.
+      - path: _test\.go
+        linters:
+          # Tests are white-box on purpose: they reach for s.srv, defaultTimeout,
+          # sanitizeRequestID. An external _test package cannot see any of that.
+          - testpackage
+          # Several tests swap the global slog default, so t.Parallel() would make
+          # them race each other rather than run faster.
+          - paralleltest
+          # Response bodies are closed by the closeBody helper via t.Cleanup, one
+          # call away from the request; bodyclose does not follow the indirection.
+          - bodyclose
 output:
   formats:
     tab:

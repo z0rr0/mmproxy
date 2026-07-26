@@ -16,7 +16,7 @@ func TestRecoverMiddleware(t *testing.T) {
 	handler := RecoverMiddleware(LoggingMiddleware(panicky))
 
 	rec := httptest.NewRecorder()
-	req := httptest.NewRequest(http.MethodGet, "/x", nil)
+	req := httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/x", nil)
 	handler.ServeHTTP(rec, req)
 
 	if rec.Code != http.StatusInternalServerError {
@@ -27,11 +27,13 @@ func TestRecoverMiddleware(t *testing.T) {
 func TestLoggingMiddlewareRequestID(t *testing.T) {
 	handler := LoggingMiddleware(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusTeapot)
-		_, _ = w.Write([]byte("hi"))
+		if _, err := w.Write([]byte("hi")); err != nil {
+			t.Errorf("write response body: %v", err)
+		}
 	}))
 
 	rec := httptest.NewRecorder()
-	handler.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/x", nil))
+	handler.ServeHTTP(rec, httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/x", nil))
 
 	if rec.Header().Get(requestIDHeader) == "" {
 		t.Error("missing X-Request-ID header")
@@ -75,7 +77,7 @@ func TestLoggingMiddlewareContextRequestID(t *testing.T) {
 	}))
 
 	rec := httptest.NewRecorder()
-	handler.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/x", nil))
+	handler.ServeHTTP(rec, httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/x", nil))
 
 	if fromContext == "" {
 		t.Fatal("handler got no request ID from the context")
@@ -94,7 +96,7 @@ func TestLoggingMiddlewareReusesClientRequestID(t *testing.T) {
 	}))
 
 	rec := httptest.NewRecorder()
-	req := httptest.NewRequest(http.MethodGet, "/x", nil)
+	req := httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/x", nil)
 	req.Header.Set(requestIDHeader, clientID)
 	handler.ServeHTTP(rec, req)
 
@@ -115,7 +117,7 @@ func TestLoggingMiddlewareRejectsBadClientRequestID(t *testing.T) {
 	}))
 
 	rec := httptest.NewRecorder()
-	req := httptest.NewRequest(http.MethodGet, "/x", nil)
+	req := httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/x", nil)
 	req.Header.Set(requestIDHeader, clientID)
 	handler.ServeHTTP(rec, req)
 
@@ -177,7 +179,7 @@ func TestLoggingMiddlewareLogsRecoveredPanic(t *testing.T) {
 	})
 	handler := RecoverMiddleware(LoggingMiddleware(panicky))
 	rec := httptest.NewRecorder()
-	handler.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/panic", nil))
+	handler.ServeHTTP(rec, httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/panic", nil))
 
 	if rec.Code != http.StatusInternalServerError {
 		t.Fatalf("status = %d, want 500", rec.Code)
@@ -200,7 +202,7 @@ func TestLoggingMiddlewarePanicAfterHeaderKeepsStatus(t *testing.T) {
 		panic("boom")
 	})
 	rec := httptest.NewRecorder()
-	LoggingMiddleware(panicky).ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/panic", nil))
+	LoggingMiddleware(panicky).ServeHTTP(rec, httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/panic", nil))
 
 	if rec.Code != http.StatusAccepted {
 		t.Fatalf("status = %d, want committed status 202", rec.Code)

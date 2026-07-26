@@ -21,8 +21,20 @@ go test -race ./internal/server/   # single package
 ```
 
 Lint config is `golangci.yml` (v2, `default: all` minus a small disable list).
+Note the name has no leading dot, so the binary does not autodiscover it — always
+`golangci-lint -c golangci.yml run`, as the Makefile does. A bare `golangci-lint
+run` silently uses the default five-linter config and proves nothing.
 `fieldalignment` is intentionally disabled so config structs mirror their TOML
 sections.
+
+`run.tests` is **on**, so `errcheck` covers `*_test.go` too. Three linters are
+excluded for `_test\.go` via `linters.exclusions.rules`, each for a reason spelled
+out in the file: `testpackage` (tests are white-box and reach into unexported
+identifiers), `paralleltest` (several tests swap the global `slog` default, so
+`t.Parallel()` would make them race), and `bodyclose` (bodies are closed by the
+`closeBody` helper through `t.Cleanup`, which it cannot follow). `goconst` gets
+`ignore-tests: true` rather than a path rule — it counts occurrences across the
+package, so test tables would otherwise drag production strings over the threshold.
 
 ## Package map
 

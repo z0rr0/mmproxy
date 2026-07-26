@@ -37,7 +37,8 @@ const webhookSecret = "topsecret"
 
 func sign(body string) string {
 	mac := hmac.New(sha256.New, []byte(webhookSecret))
-	mac.Write([]byte(body))
+	// hash.Hash.Write is documented never to return an error.
+	_, _ = mac.Write([]byte(body))
 	return hex.EncodeToString(mac.Sum(nil))
 }
 
@@ -70,7 +71,7 @@ func sliceToSet(ids []int64) map[int64]struct{} {
 
 func post(t *testing.T, url, sig, body string) *http.Response {
 	t.Helper()
-	req, err := http.NewRequest(http.MethodPost, url, strings.NewReader(body))
+	req, err := http.NewRequestWithContext(t.Context(), http.MethodPost, url, strings.NewReader(body))
 	if err != nil {
 		t.Fatalf("new request: %v", err)
 	}
@@ -81,29 +82,57 @@ func post(t *testing.T, url, sig, body string) *http.Response {
 	if err != nil {
 		t.Fatalf("do request: %v", err)
 	}
+	closeBody(t, resp)
 	return resp
+}
+
+func get(t *testing.T, url string) *http.Response {
+	t.Helper()
+	req, err := http.NewRequestWithContext(t.Context(), http.MethodGet, url, nil)
+	if err != nil {
+		t.Fatalf("new request: %v", err)
+	}
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("do request: %v", err)
+	}
+	closeBody(t, resp)
+	return resp
+}
+
+// closeBody defers the body close to test teardown and reports a failed close
+// instead of dropping it: a broken close points at the server, not at whatever
+// the test is asserting, so it is logged rather than turned into a failure.
+func closeBody(t *testing.T, resp *http.Response) {
+	t.Helper()
+	t.Cleanup(func() {
+		if err := resp.Body.Close(); err != nil {
+			t.Logf("close response body: %v", err)
+		}
+	})
+}
+
+// readBody drains the response so a read error surfaces as itself instead of as
+// a body-mismatch assertion further down.
+func readBody(t *testing.T, resp *http.Response) string {
+	t.Helper()
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		t.Fatalf("read response body: %v", err)
+	}
+	return string(body)
 }
 
 func TestHealthAndVersion(t *testing.T) {
 	ts := newTestServer(t, &mockPoster{}, []int64{1})
 
-	resp, err := http.Get(ts.URL + "/health")
-	if err != nil {
-		t.Fatal(err)
-	}
-	body, _ := io.ReadAll(resp.Body)
-	resp.Body.Close()
-	if resp.StatusCode != http.StatusOK || string(body) != "OK" {
+	resp := get(t, ts.URL+"/health")
+	if body := readBody(t, resp); resp.StatusCode != http.StatusOK || body != "OK" {
 		t.Errorf("/health = %d %q, want 200 OK", resp.StatusCode, body)
 	}
 
-	resp, err = http.Get(ts.URL + "/version")
-	if err != nil {
-		t.Fatal(err)
-	}
-	body, _ = io.ReadAll(resp.Body)
-	resp.Body.Close()
-	if resp.StatusCode != http.StatusOK || string(body) != "v-test" {
+	resp = get(t, ts.URL+"/version")
+	if body := readBody(t, resp); resp.StatusCode != http.StatusOK || body != "v-test" {
 		t.Errorf("/version = %d %q, want 200 v-test", resp.StatusCode, body)
 	}
 	if resp.Header.Get(requestIDHeader) == "" {
@@ -151,7 +180,6 @@ func TestMinifluxHappyPath(t *testing.T) {
 
 	body := `{"event_type":"new_entries","feed":{"id":1,"title":"Feed"},"entries":[{"title":"A","url":"https://e.com/a"},{"title":"B","url":"https://e.com/b"}]}`
 	resp := post(t, ts.URL+"/miniflux", sign(body), body)
-	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
 		t.Fatalf("status = %d, want 200", resp.StatusCode)
@@ -174,7 +202,6 @@ func TestMinifluxBadSignature(t *testing.T) {
 
 	body := `{"event_type":"new_entries","feed":{"id":1},"entries":[{"title":"A","url":"u"}]}`
 	resp := post(t, ts.URL+"/miniflux", "deadbeef", body)
-	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusUnauthorized {
 		t.Errorf("status = %d, want 401", resp.StatusCode)
@@ -190,7 +217,6 @@ func TestMinifluxBadJSON(t *testing.T) {
 
 	body := `{"event_type":"new_entries", broken`
 	resp := post(t, ts.URL+"/miniflux", sign(body), body)
-	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusBadRequest {
 		t.Errorf("status = %d, want 400", resp.StatusCode)
@@ -206,7 +232,6 @@ func TestMinifluxSaveEntryIgnored(t *testing.T) {
 
 	body := `{"event_type":"save_entry","entry":{"id":5}}`
 	resp := post(t, ts.URL+"/miniflux", sign(body), body)
-	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
 		t.Errorf("status = %d, want 200", resp.StatusCode)
@@ -222,7 +247,6 @@ func TestMinifluxFeedFiltered(t *testing.T) {
 
 	body := `{"event_type":"new_entries","feed":{"id":99},"entries":[{"title":"X","url":"u"}]}`
 	resp := post(t, ts.URL+"/miniflux", sign(body), body)
-	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
 		t.Errorf("status = %d, want 200", resp.StatusCode)
@@ -263,7 +287,6 @@ func TestMinifluxFeedFilteredLogsRequestID(t *testing.T) {
 
 	body := `{"event_type":"new_entries","feed":{"id":99,"title":"Blocked"},"entries":[{"title":"X","url":"u"}]}`
 	resp := post(t, ts.URL+"/miniflux", sign(body), body)
-	defer resp.Body.Close()
 
 	requestID := resp.Header.Get(requestIDHeader)
 	if requestID == "" {
@@ -292,7 +315,6 @@ func TestMinifluxEmptyAllowlistAcceptsAll(t *testing.T) {
 
 	body := `{"event_type":"new_entries","feed":{"id":12345},"entries":[{"title":"X","url":"u"}]}`
 	resp := post(t, ts.URL+"/miniflux", sign(body), body)
-	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
 		t.Errorf("status = %d, want 200", resp.StatusCode)
@@ -308,7 +330,6 @@ func TestMinifluxEmptyEntries(t *testing.T) {
 
 	body := `{"event_type":"new_entries","feed":{"id":1},"entries":[]}`
 	resp := post(t, ts.URL+"/miniflux", sign(body), body)
-	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
 		t.Errorf("status = %d, want 200", resp.StatusCode)
@@ -324,7 +345,6 @@ func TestMinifluxPosterError(t *testing.T) {
 
 	body := `{"event_type":"new_entries","feed":{"id":1},"entries":[{"title":"A","url":"u"}]}`
 	resp := post(t, ts.URL+"/miniflux", sign(body), body)
-	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusBadGateway {
 		t.Errorf("status = %d, want 502", resp.StatusCode)
@@ -337,7 +357,6 @@ func TestMinifluxBodyTooLarge(t *testing.T) {
 
 	big := strings.Repeat("a", (4<<20)+1)
 	resp := post(t, ts.URL+"/miniflux", sign(big), big)
-	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusRequestEntityTooLarge {
 		t.Errorf("status = %d, want 413", resp.StatusCode)
@@ -350,11 +369,7 @@ func TestMinifluxBodyTooLarge(t *testing.T) {
 func TestMinifluxMethodNotAllowed(t *testing.T) {
 	ts := newTestServer(t, &mockPoster{}, []int64{1})
 
-	resp, err := http.Get(ts.URL + "/miniflux")
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer resp.Body.Close()
+	resp := get(t, ts.URL+"/miniflux")
 	if resp.StatusCode != http.StatusMethodNotAllowed {
 		t.Errorf("status = %d, want 405", resp.StatusCode)
 	}
@@ -368,11 +383,12 @@ func TestMinifluxDisabledReturns404(t *testing.T) {
 	}
 	s := New(cfg, &mockPoster{}, "v-test")
 	ts := httptest.NewServer(s.srv.Handler)
-	defer ts.Close()
+	// Cleanup, not defer: post registers its body close as a later cleanup, and
+	// LIFO order then closes the body before Close waits on the connection.
+	t.Cleanup(ts.Close)
 
 	body := `{"event_type":"new_entries"}`
 	resp := post(t, ts.URL+"/miniflux", sign(body), body)
-	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusNotFound {
 		t.Errorf("status = %d, want 404 when miniflux disabled", resp.StatusCode)
 	}

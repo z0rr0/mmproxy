@@ -9,7 +9,8 @@ import (
 
 func sign(secret, body string) string {
 	mac := hmac.New(sha256.New, []byte(secret))
-	mac.Write([]byte(body))
+	// hash.Hash.Write is documented never to return an error.
+	_, _ = mac.Write([]byte(body))
 	return hex.EncodeToString(mac.Sum(nil))
 }
 

@@ -50,16 +50,16 @@ func TestPost(t *testing.T) {
 			return
 		}
 		gotAuth = r.Header.Get("Authorization")
-		body, _ := io.ReadAll(r.Body)
 		var post struct {
 			ChannelID string `json:"channel_id"`
 			Message   string `json:"message"`
 		}
-		_ = json.Unmarshal(body, &post)
+		if !decodeBody(t, w, r, &post) {
+			return
+		}
 		gotChannel = post.ChannelID
 		gotMessage = post.Message
-		w.WriteHeader(http.StatusCreated)
-		_, _ = io.WriteString(w, `{"id":"post1"}`)
+		writeBody(t, w, http.StatusCreated, `{"id":"post1"}`)
 	}))
 	defer ts.Close()
 
@@ -83,14 +83,14 @@ func TestPost(t *testing.T) {
 func TestPostTruncatesToConfiguredLimit(t *testing.T) {
 	var gotMessage string
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		body, _ := io.ReadAll(r.Body)
 		var post struct {
 			Message string `json:"message"`
 		}
-		_ = json.Unmarshal(body, &post)
+		if !decodeBody(t, w, r, &post) {
+			return
+		}
 		gotMessage = post.Message
-		w.WriteHeader(http.StatusCreated)
-		_, _ = io.WriteString(w, `{"id":"post1"}`)
+		writeBody(t, w, http.StatusCreated, `{"id":"post1"}`)
 	}))
 	defer ts.Close()
 
@@ -135,7 +135,7 @@ func TestPing(t *testing.T) {
 			return
 		}
 		gotAuth = r.Header.Get("Authorization")
-		_, _ = io.WriteString(w, `{"id":"user1","username":"bot"}`)
+		writeBody(t, w, http.StatusOK, `{"id":"user1","username":"bot"}`)
 	}))
 	defer ts.Close()
 
@@ -150,7 +150,7 @@ func TestPing(t *testing.T) {
 
 func TestPingRejectsMalformedResponse(t *testing.T) {
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		_, _ = io.WriteString(w, `{broken`)
+		writeBody(t, w, http.StatusOK, `{broken`)
 	}))
 	defer ts.Close()
 
@@ -163,8 +163,7 @@ func TestPingRejectsMalformedResponse(t *testing.T) {
 func TestAPIErrorDoesNotExposeToken(t *testing.T) {
 	const token = "very-secret-token"
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		w.WriteHeader(http.StatusUnauthorized)
-		_, _ = io.WriteString(w, `{"message":"invalid credentials"}`)
+		writeBody(t, w, http.StatusUnauthorized, `{"message":"invalid credentials"}`)
 	}))
 	defer ts.Close()
 
@@ -234,6 +233,42 @@ func TestPostHonorsTimeout(t *testing.T) {
 	}
 	if !errors.Is(err, context.DeadlineExceeded) {
 		t.Errorf("error = %v, want context.DeadlineExceeded", err)
+	}
+}
+
+// decodeBody reads and unmarshals a request captured by a test handler, and
+// reports false once it has answered the client itself. Without it a broken body
+// surfaces as an empty captured field ("channel = \"\", want chan42") instead of
+// the read or unmarshal error that actually caused it.
+//
+// It reports failures with Errorf, never Fatalf: this runs in the httptest server
+// goroutine, and FailNow must be called from the goroutine running the test. The
+// handler is driven synchronously from inside the client call under test, so the
+// test cannot have finished by the time this logs.
+func decodeBody(t *testing.T, w http.ResponseWriter, r *http.Request, dst any) bool {
+	t.Helper()
+	body, err := io.ReadAll(r.Body)
+	if err != nil {
+		t.Errorf("read request body: %v", err)
+		http.Error(w, "read body", http.StatusInternalServerError)
+		return false
+	}
+	if err = json.Unmarshal(body, dst); err != nil {
+		t.Errorf("unmarshal request body %q: %v", body, err)
+		http.Error(w, "bad body", http.StatusInternalServerError)
+		return false
+	}
+	return true
+}
+
+// writeBody writes a canned API response. A failed write means the client hung up
+// mid-test; reporting it here keeps that from reaching the test as a confusing
+// decode error. Same goroutine caveat as decodeBody.
+func writeBody(t *testing.T, w http.ResponseWriter, status int, body string) {
+	t.Helper()
+	w.WriteHeader(status)
+	if _, err := io.WriteString(w, body); err != nil {
+		t.Errorf("write response body: %v", err)
 	}
 }
 

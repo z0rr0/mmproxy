@@ -12,6 +12,8 @@ MMProxy proxies messages into a Mattermost channel from two independent sources:
 Each source is optional; enable one or both. Processing is synchronous and retry-free: delivery errors are returned to
 the caller.
 
+![MMProxy schema](docs/schema.png)
+
 ## Endpoints
 
 | Method & path    | Purpose                                                           |

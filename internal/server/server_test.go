@@ -1,15 +1,18 @@
 package server
 
 import (
+	"bytes"
 	"context"
 	"crypto/hmac"
 	"crypto/sha256"
 	"encoding/hex"
 	"errors"
 	"io"
+	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -226,6 +229,60 @@ func TestMinifluxFeedFiltered(t *testing.T) {
 	}
 	if poster.calls != 0 {
 		t.Errorf("poster called %d times, want 0", poster.calls)
+	}
+}
+
+// safeBuffer guards the log buffer: the handler writes from the httptest server
+// goroutine while the test reads from its own.
+type safeBuffer struct {
+	mu  sync.Mutex
+	buf bytes.Buffer
+}
+
+func (b *safeBuffer) Write(p []byte) (int, error) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.buf.Write(p)
+}
+
+func (b *safeBuffer) String() string {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.buf.String()
+}
+
+// TestMinifluxFeedFilteredLogsRequestID pins the handler log to the same request
+// ID the middleware reports, so a filtered feed can be traced back to its request.
+func TestMinifluxFeedFilteredLogsRequestID(t *testing.T) {
+	var logs safeBuffer
+	previous := slog.Default()
+	slog.SetDefault(slog.New(slog.NewTextHandler(&logs, nil)))
+	t.Cleanup(func() { slog.SetDefault(previous) })
+
+	ts := newTestServer(t, &mockPoster{}, []int64{1, 2})
+
+	body := `{"event_type":"new_entries","feed":{"id":99,"title":"Blocked"},"entries":[{"title":"X","url":"u"}]}`
+	resp := post(t, ts.URL+"/miniflux", sign(body), body)
+	defer resp.Body.Close()
+
+	requestID := resp.Header.Get(requestIDHeader)
+	if requestID == "" {
+		t.Fatal("missing X-Request-ID header")
+	}
+
+	var found bool
+	want := "request_id=" + requestID
+	for line := range strings.SplitSeq(logs.String(), "\n") {
+		if !strings.Contains(line, "miniflux feed filtered") {
+			continue
+		}
+		found = true
+		if !strings.Contains(line, want) {
+			t.Errorf("filtered log %q missing %q", line, want)
+		}
+	}
+	if !found {
+		t.Errorf("no %q log line: %s", "miniflux feed filtered", logs.String())
 	}
 }
 

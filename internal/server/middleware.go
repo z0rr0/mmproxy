@@ -1,6 +1,7 @@
 package server
 
 import (
+	"context"
 	"crypto/rand"
 	"encoding/hex"
 	"log/slog"
@@ -9,7 +10,29 @@ import (
 	"time"
 )
 
-const requestIDHeader = "X-Request-ID"
+const (
+	requestIDHeader = "X-Request-ID"
+	// maxRequestIDLen caps a client-supplied request ID; ours is 16 hex chars.
+	maxRequestIDLen = 64
+)
+
+// contextKey is the private key type for values this package stores in a
+// request context, so the keys cannot collide with other packages.
+type contextKey int
+
+const requestIDKey contextKey = iota
+
+// withRequestID stores the request ID for handlers that log below the middleware.
+func withRequestID(ctx context.Context, id string) context.Context {
+	return context.WithValue(ctx, requestIDKey, id)
+}
+
+// requestIDFrom returns the request ID stored by LoggingMiddleware, or an empty
+// string when a handler runs without it (a unit test calling it directly).
+func requestIDFrom(ctx context.Context) string {
+	id, _ := ctx.Value(requestIDKey).(string)
+	return id
+}
 
 // responseWriter wraps http.ResponseWriter to capture the status code and the
 // number of bytes written for access logging.
@@ -57,12 +80,36 @@ func newRequestID() string {
 	return hex.EncodeToString(buf[:])
 }
 
-// LoggingMiddleware assigns a request ID, echoes it back in a header, and logs
-// request completion at a level chosen by the response status.
+// sanitizeRequestID accepts a client-supplied request ID only when it is a short
+// token of unambiguous characters, and returns an empty string otherwise. The
+// value is echoed back in a response header and written to logs, so nothing else
+// may pass through.
+func sanitizeRequestID(v string) string {
+	if v == "" || len(v) > maxRequestIDLen {
+		return ""
+	}
+	for i := range len(v) {
+		switch c := v[i]; {
+		case c >= 'a' && c <= 'z', c >= 'A' && c <= 'Z', c >= '0' && c <= '9', c == '-', c == '_':
+		default:
+			return ""
+		}
+	}
+	return v
+}
+
+// LoggingMiddleware assigns a request ID, echoes it back in a header, stores it
+// in the request context for the handlers, and logs request completion at a level
+// chosen by the response status. A valid incoming X-Request-ID is reused so a
+// trace survives across a reverse proxy.
 func LoggingMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		start := time.Now()
-		requestID := newRequestID()
+		requestID := sanitizeRequestID(r.Header.Get(requestIDHeader))
+		if requestID == "" {
+			requestID = newRequestID()
+		}
+		r = r.WithContext(withRequestID(r.Context(), requestID))
 
 		ww := wrapResponseWriter(w)
 		ww.Header().Set(requestIDHeader, requestID)

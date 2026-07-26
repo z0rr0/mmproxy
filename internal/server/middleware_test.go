@@ -41,6 +41,93 @@ func TestLoggingMiddlewareRequestID(t *testing.T) {
 	}
 }
 
+func TestSanitizeRequestID(t *testing.T) {
+	tests := []struct {
+		name string
+		in   string
+		want string
+	}{
+		{"hex", "8f14e45fceea167a", "8f14e45fceea167a"},
+		{"dashes and underscores", "trace-abc_123", "trace-abc_123"},
+		{"empty", "", ""},
+		{"too long", strings.Repeat("a", maxRequestIDLen+1), ""},
+		{"max length", strings.Repeat("a", maxRequestIDLen), strings.Repeat("a", maxRequestIDLen)},
+		{"space", "bad value", ""},
+		{"tab", "bad\tvalue", ""},
+		{"newline", "bad\nvalue", ""},
+		{"quote", `id="x"`, ""},
+		{"cyrillic", "идентификатор", ""},
+		{"dot", "trace.1", ""},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := sanitizeRequestID(tt.in); got != tt.want {
+				t.Errorf("sanitizeRequestID(%q) = %q, want %q", tt.in, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestLoggingMiddlewareContextRequestID(t *testing.T) {
+	var fromContext string
+	handler := LoggingMiddleware(http.HandlerFunc(func(_ http.ResponseWriter, r *http.Request) {
+		fromContext = requestIDFrom(r.Context())
+	}))
+
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/x", nil))
+
+	if fromContext == "" {
+		t.Fatal("handler got no request ID from the context")
+	}
+	if header := rec.Header().Get(requestIDHeader); fromContext != header {
+		t.Errorf("context request ID = %q, response header = %q, want equal", fromContext, header)
+	}
+}
+
+func TestLoggingMiddlewareReusesClientRequestID(t *testing.T) {
+	const clientID = "trace-abc123"
+
+	var fromContext string
+	handler := LoggingMiddleware(http.HandlerFunc(func(_ http.ResponseWriter, r *http.Request) {
+		fromContext = requestIDFrom(r.Context())
+	}))
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/x", nil)
+	req.Header.Set(requestIDHeader, clientID)
+	handler.ServeHTTP(rec, req)
+
+	if fromContext != clientID {
+		t.Errorf("context request ID = %q, want %q", fromContext, clientID)
+	}
+	if got := rec.Header().Get(requestIDHeader); got != clientID {
+		t.Errorf("response header = %q, want %q", got, clientID)
+	}
+}
+
+func TestLoggingMiddlewareRejectsBadClientRequestID(t *testing.T) {
+	const clientID = "bad value"
+
+	var fromContext string
+	handler := LoggingMiddleware(http.HandlerFunc(func(_ http.ResponseWriter, r *http.Request) {
+		fromContext = requestIDFrom(r.Context())
+	}))
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/x", nil)
+	req.Header.Set(requestIDHeader, clientID)
+	handler.ServeHTTP(rec, req)
+
+	header := rec.Header().Get(requestIDHeader)
+	if fromContext == "" || fromContext == clientID {
+		t.Errorf("context request ID = %q, want a generated one", fromContext)
+	}
+	if header != fromContext {
+		t.Errorf("response header = %q, want generated %q", header, fromContext)
+	}
+}
+
 func TestResponseWriterCaptures(t *testing.T) {
 	rec := httptest.NewRecorder()
 	ww := wrapResponseWriter(rec)

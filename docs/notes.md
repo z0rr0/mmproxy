@@ -77,6 +77,16 @@ Example post:
 - [Second article](https://example.com/2)
 ```
 
+## Request IDs
+
+- Every HTTP request gets an ID: a valid incoming `X-Request-ID` is reused, otherwise
+  an 8-byte hex value is generated. "Valid" means at most 64 characters of
+  `A-Z a-z 0-9 - _` — the ID is echoed back in the response header and written to
+  logs, so any other input is discarded rather than trusted.
+- The ID is echoed in the `X-Request-ID` response header and carried in the request
+  context, so handler logs (`miniflux feed filtered`, `miniflux post`, …) and the
+  final `request completed` line share the same `request_id` field.
+
 ## Webhook response codes
 
 | Situation                                 | Code | Notes                           |

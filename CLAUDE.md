@@ -55,6 +55,14 @@ the real packages.
 - **Channel normalization** happens in `config`: empty per-source `channel_id`
   is resolved to the shared one during validation, so handlers never see the
   fallback.
+- **Request ID via context**: `LoggingMiddleware` stores the ID under the private
+  `requestIDKey` (type `contextKey`, `middleware.go`); handlers read it with
+  `requestIDFrom(r.Context())` and log it as `request_id`, so handler lines join up
+  with the `request completed` line. `RecoverMiddleware` cannot see it — it wraps
+  the logging middleware, so the ID does not exist yet at that layer. A client
+  `X-Request-ID` is reused only when `sanitizeRequestID` accepts it (≤64 chars of
+  `[A-Za-z0-9_-]`); the value is echoed back in a header and written to logs, so
+  anything else is replaced by a generated ID.
 
 ## Gotchas
 

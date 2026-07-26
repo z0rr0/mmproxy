@@ -27,6 +27,8 @@ func (s *Server) handleVersion(w http.ResponseWriter, _ *http.Request) {
 // deliberate: the signature is computed over the exact bytes received, before
 // any JSON decoding, and rejected input never reaches the parser.
 func (s *Server) handleMiniflux(w http.ResponseWriter, r *http.Request) {
+	requestID := requestIDFrom(r.Context())
+
 	body, err := io.ReadAll(http.MaxBytesReader(w, r.Body, maxBodyBytes))
 	if err != nil {
 		if _, ok := errors.AsType[*http.MaxBytesError](err); ok {
@@ -50,13 +52,17 @@ func (s *Server) handleMiniflux(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if event.EventType != miniflux.EventNewEntries {
-		slog.Info("miniflux event ignored", "event_type", event.EventType)
+		slog.Info("miniflux event ignored", "request_id", requestID, "event_type", event.EventType)
 		writeText(w, http.StatusOK, "ignored")
 		return
 	}
 
 	if !s.feedAllowed(event.Feed.ID) {
-		slog.Info("miniflux feed filtered", "feed_id", event.Feed.ID, "feed_title", event.Feed.Title)
+		slog.Info("miniflux feed filtered",
+			"request_id", requestID,
+			"feed_id", event.Feed.ID,
+			"feed_title", event.Feed.Title,
+		)
 		writeText(w, http.StatusOK, "filtered")
 		return
 	}
@@ -68,12 +74,12 @@ func (s *Server) handleMiniflux(w http.ResponseWriter, r *http.Request) {
 
 	message := miniflux.FormatPost(&event)
 	if err = s.poster.Post(r.Context(), s.miniflux.ChannelID, message); err != nil {
-		slog.Error("miniflux post failed", "error", err, "feed_id", event.Feed.ID)
+		slog.Error("miniflux post failed", "request_id", requestID, "error", err, "feed_id", event.Feed.ID)
 		writeText(w, http.StatusBadGateway, "upstream error")
 		return
 	}
 	writeText(w, http.StatusOK, "OK")
-	slog.Info("miniflux post", "feed_id", event.Feed.ID)
+	slog.Info("miniflux post", "request_id", requestID, "feed_id", event.Feed.ID)
 }
 
 // feedAllowed reports whether the feed passes the configured allowlist. An empty

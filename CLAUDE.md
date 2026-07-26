@@ -15,6 +15,8 @@ make test     # gofmt check + go vet + golangci-lint + govulncheck, then go test
 make lint     # static analysis only
 make build    # go build with -ldflags: -X main.Version/Revision/BuildDate (native host arch)
 make dist     # cross-compile PLATFORMS (darwin/arm64, linux/amd64) into dist/
+make docker   # z0rr0/mmproxy:latest + :$(TAG), host arch, --load
+make docker-push                   # multi-arch, straight to Docker Hub
 go test -race ./internal/server/   # single package
 ```
 
@@ -111,3 +113,13 @@ the real packages.
   target in the Makefile and `continue-on-error: true` in CI.
 - Webhook response codes are specified in `docs/notes.md`; `server_test.go`
   pins each one.
+- **Two docker targets, on purpose**: `make docker` builds only the host arch and
+  `--load`s it, because the default Docker Desktop builder (`docker` driver,
+  overlay2 image store) cannot export a multi-arch manifest list locally.
+  `make docker-push` builds `linux/amd64,linux/arm64` on its own
+  `docker-container` builder (`$(BUILDER)`, created idempotently on first use)
+  and pushes straight to the registry — `docker-push` deliberately does **not**
+  depend on `docker`, that would build everything twice. Both tag `$(IMAGE)`
+  with `latest` and `$(TAG)`; `docker-push` refuses the `v0.0.0` fallback so an
+  untagged tree cannot be published. `docker-compose.yml` no longer builds
+  anything — it just runs `z0rr0/mmproxy:latest`.

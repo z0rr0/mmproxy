@@ -9,9 +9,10 @@ COPY go.mod go.sum ./
 RUN go mod download
 COPY . .
 ARG GO_LDFLAGS=""
-# TARGETOS/TARGETARCH come from BuildKit's --platform; the compose file pins it
-# to linux/amd64. Not named LDFLAGS: that one conventionally holds C linker flags
-# and is often already exported by the host shell (Homebrew sets it).
+# TARGETOS/TARGETARCH come from BuildKit's --platform: `make docker` builds for
+# the host arch, `make docker-push` for linux/amd64 and linux/arm64. Not named
+# LDFLAGS: that one conventionally holds C linker flags and is often already
+# exported by the host shell (Homebrew sets it).
 ARG TARGETOS
 ARG TARGETARCH
 RUN CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH go build -ldflags "$GO_LDFLAGS" -o /app/mmproxy .

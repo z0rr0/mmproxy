@@ -1,15 +1,9 @@
 services:
   mmproxy:
-    build:
-      context: .
-      platforms:
-        - linux/amd64
-      args:
-        GO_LDFLAGS: "${GO_LDFLAGS:-}"
-    image: mmproxy:latest
+    # Built by `make docker` (host arch) or pulled from Docker Hub, where
+    # `make docker-push` publishes a linux/amd64 + linux/arm64 manifest list.
+    image: z0rr0/mmproxy:latest
     container_name: mmproxy
-    # The image is amd64-only; on arm64 hosts this runs under emulation.
-    platform: linux/amd64
     ports:
       - "8080:8080"
     volumes:

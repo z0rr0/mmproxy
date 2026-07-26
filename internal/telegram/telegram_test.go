@@ -149,7 +149,13 @@ func TestHandleForwardedText(t *testing.T) {
 	api := &mockBotAPI{}
 	h := newHandler(poster, 1)
 
-	h.Handle(context.Background(), api, forwardedMsg(1, "important news"))
+	update := forwardedMsg(1, "important news")
+	// Telegram carries the bold run out of band; without reading Entities the
+	// post would arrive as flat text.
+	update.Message.Entities = []models.MessageEntity{
+		{Type: models.MessageEntityTypeBold, Offset: 0, Length: 9},
+	}
+	h.Handle(context.Background(), api, update)
 
 	if poster.calls != 1 {
 		t.Fatalf("poster called %d times, want 1", poster.calls)
@@ -157,8 +163,8 @@ func TestHandleForwardedText(t *testing.T) {
 	if poster.channel != "tg-channel" {
 		t.Errorf("channel = %q, want tg-channel", poster.channel)
 	}
-	if !strings.Contains(poster.message, "Forwarded from Src") || !strings.Contains(poster.message, "important news") {
-		t.Errorf("message = %q, missing attribution or body", poster.message)
+	if !strings.Contains(poster.message, "Forwarded from Src") || !strings.Contains(poster.message, "**important** news") {
+		t.Errorf("message = %q, missing attribution or formatted body", poster.message)
 	}
 	// Reply is a confirmation directed at the origin chat and message.
 	if api.calls != 1 || !strings.Contains(api.lastTx, "Опубликовано") {
@@ -179,13 +185,24 @@ func TestHandleCaptionUsedWhenTextEmpty(t *testing.T) {
 
 	update := forwardedMsg(1, "")
 	update.Message.Caption = "photo caption"
+	update.Message.CaptionEntities = []models.MessageEntity{
+		{Type: models.MessageEntityTypeItalic, Offset: 6, Length: 7},
+	}
+	// Entities belong to the empty Text and must not be applied to the caption:
+	// their offsets would land on the wrong words.
+	update.Message.Entities = []models.MessageEntity{
+		{Type: models.MessageEntityTypeBold, Offset: 0, Length: 5},
+	}
 	h.Handle(context.Background(), api, update)
 
 	if poster.calls != 1 {
 		t.Fatalf("poster called %d times, want 1", poster.calls)
 	}
-	if !strings.Contains(poster.message, "photo caption") {
-		t.Errorf("message = %q, want caption used", poster.message)
+	if !strings.Contains(poster.message, "photo *caption*") {
+		t.Errorf("message = %q, want caption with its own entities", poster.message)
+	}
+	if strings.Contains(poster.message, "**") {
+		t.Errorf("message = %q, must not apply Text entities to the caption", poster.message)
 	}
 }
 

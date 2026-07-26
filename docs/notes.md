@@ -24,13 +24,25 @@ is returned to the caller (bot reply / HTTP status) rather than retried.
 - **Content**: the message `text`, or the `caption` when the message is media.
   Media files themselves are **not** downloaded or re-uploaded. A forwarded
   message with neither text nor caption gets a "no text" reply.
+- **Formatting** is rebuilt from `entities` (`caption_entities` for a caption),
+  because Telegram delivers the body as plain text and its markup as a separate
+  array of offsets. Without this a hyperlink would lose its URL for good: the
+  target exists only in the entity, never in the text.
+    - Rendered: `bold` → `**`, `italic` → `*`, `strikethrough` → `~~`,
+      `code` → `` ` ``, `pre` → a fenced block with its language, `text_link` →
+      `[label](url)`.
+    - Plain text: `underline` and `spoiler` (Mattermost has no syntax for them),
+      `blockquote`, `text_mention`, and the entities that only mark up text
+      already readable as-is (`url`, `mention`, `hashtag`, `email`, …).
+    - Link targets are allowlisted by scheme (`http`, `https`, `tg`, `mailto`);
+      anything else — `javascript:` included — renders as unlinked text.
 - **Attribution**: each post is prefixed with the origin. The four
   `MessageOrigin` variants map to:
     - user → `First Last (@username)`
     - hidden user → the name string Telegram exposes
     - chat → the chat title (or `@username`)
-    - channel → the channel title, plus a `https://t.me/<username>/<id>` link when
-      the channel is public.
+    - channel → the channel title, as a Markdown link to
+      `https://t.me/<username>/<id>` when the channel is public.
 - **Replies** go back to the origin chat as a reply to the original message:
   "Опубликовано в Mattermost." on success, the error text on failure.
 - **Shutdown** stops long polling first, then waits up to the shared shutdown
@@ -40,9 +52,9 @@ is returned to the caller (bot reply / HTTP status) rather than retried.
 Example post:
 
 ```
-Forwarded from News (https://t.me/newschan/42):
+Forwarded from [News](https://t.me/newschan/42):
 
-Breaking: something happened.
+**Breaking**: something [happened](https://example.com/story).
 ```
 
 ## Miniflux source
@@ -66,8 +78,12 @@ Breaking: something happened.
   Markdown bulleted list of `[title](url)` under the feed title. Entry HTML
   `content` is intentionally not published in v1.
 - **Markdown labels**: dynamic feed, entry and Telegram attribution labels are
-  flattened to one line and escaped before being inserted into Markdown.
-  Telegram message bodies and entry URLs remain unchanged.
+  flattened to one line and escaped before being inserted into Markdown. Entry
+  URLs remain unchanged. A Telegram message body is escaped too, but without
+  flattening — its line breaks are part of the message — so the only markup that
+  survives into the post is the markup rebuilt from entities. Markdown typed
+  literally into the source message stays visible text and cannot restructure
+  the post.
 
 Example post:
 
@@ -107,7 +123,10 @@ This is an accepted v1 trade-off of the synchronous, retry-free design.
 - Synchronous, **no retries, no queue, no metrics**.
 - Long messages are truncated to `mattermost.max_message_runes` (by runes, not
   bytes — safe for multibyte text). It defaults to 16383, Mattermost's own
-  `MaxPostSize` default, and is configurable for servers that differ.
+  `MaxPostSize` default, and is configurable for servers that differ. Truncation
+  does not repair markup it cuts through, so a clipped post can end on an
+  unclosed `**` or code fence. Only the tail of an already-oversized message is
+  affected.
 - Telegram media is not transferred; only text/caption.
 - Miniflux entry HTML `content` is not published.
 - Startup is **fail-fast**: if the Mattermost `GetMe` health check fails (bad

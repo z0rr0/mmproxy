@@ -121,16 +121,17 @@ func (h *Handler) Handle(ctx context.Context, api BotAPI, update *models.Update)
 		return
 	}
 
-	text := msg.Text
+	// Formatting lives in the entities, not in the text, so both travel together.
+	text, entities := msg.Text, msg.Entities
 	if text == "" {
-		text = msg.Caption
+		text, entities = msg.Caption, msg.CaptionEntities
 	}
 	if text == "" {
 		h.reply(ctx, api, msg, msgNoText)
 		return
 	}
 
-	formatted := FormatForwarded(msg.ForwardOrigin, text)
+	formatted := FormatForwarded(msg.ForwardOrigin, text, entities)
 	if err := h.poster.Post(ctx, h.channelID, formatted); err != nil {
 		slog.Error("telegram: post failed", "error", err, "user_id", msg.From.ID)
 		h.reply(ctx, api, msg, msgPostFailed+err.Error())

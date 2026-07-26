@@ -59,7 +59,7 @@ func TestOriginDescription(t *testing.T) {
 				Type:                 models.MessageOriginTypeChannel,
 				MessageOriginChannel: &models.MessageOriginChannel{Chat: models.Chat{Title: "News", Username: "newschan"}, MessageID: 42},
 			},
-			want: "News (https://t.me/newschan/42)",
+			want: "[News](https://t.me/newschan/42)",
 		},
 		{
 			name: "channel without username",
@@ -94,7 +94,7 @@ func TestFormatForwarded(t *testing.T) {
 		Type:              models.MessageOriginTypeUser,
 		MessageOriginUser: &models.MessageOriginUser{SenderUser: models.User{FirstName: "Bob"}},
 	}
-	got := FormatForwarded(origin, "hello world")
+	got := FormatForwarded(origin, "hello world", nil)
 	want := "Forwarded from Bob:\n\nhello world"
 	if got != want {
 		t.Errorf("FormatForwarded() = %q, want %q", got, want)
@@ -104,7 +104,11 @@ func TestFormatForwarded(t *testing.T) {
 	}
 }
 
-func TestFormatForwardedEscapesAttributionButNotBody(t *testing.T) {
+// TestFormatForwardedEscapesAttributionAndBody covers both untrusted halves of
+// the post: the attribution is flattened and escaped, and the body — which used
+// to be passed through verbatim — is escaped too, so only markup rebuilt from
+// entities reaches Mattermost as markup.
+func TestFormatForwardedEscapesAttributionAndBody(t *testing.T) {
 	origin := &models.MessageOrigin{
 		Type: models.MessageOriginTypeChannel,
 		MessageOriginChannel: &models.MessageOriginChannel{
@@ -112,9 +116,27 @@ func TestFormatForwardedEscapesAttributionButNotBody(t *testing.T) {
 			MessageID: 42,
 		},
 	}
-	body := "**keep body markdown**"
-	got := FormatForwarded(origin, body)
-	want := "Forwarded from \\[News\\] \\#1 Injected (https://t.me/newschan/42):\n\n" + body
+	got := FormatForwarded(origin, "**not really bold**", nil)
+	want := "Forwarded from [\\[News\\] \\#1 Injected](https://t.me/newschan/42):" +
+		"\n\n\\*\\*not really bold\\*\\*"
+	if got != want {
+		t.Fatalf("FormatForwarded() = %q, want %q", got, want)
+	}
+}
+
+// TestFormatForwardedRendersEntities checks the attribution and the entity
+// rendering meet in one post.
+func TestFormatForwardedRendersEntities(t *testing.T) {
+	origin := &models.MessageOrigin{
+		Type:              models.MessageOriginTypeUser,
+		MessageOriginUser: &models.MessageOriginUser{SenderUser: models.User{FirstName: "Bob"}},
+	}
+	entities := []models.MessageEntity{
+		{Type: models.MessageEntityTypeBold, Offset: 0, Length: 6},
+		{Type: models.MessageEntityTypeTextLink, Offset: 7, Length: 4, URL: "https://example.com"},
+	}
+	got := FormatForwarded(origin, "Срочно тута", entities)
+	want := "Forwarded from Bob:\n\n**Срочно** [тута](https://example.com)"
 	if got != want {
 		t.Fatalf("FormatForwarded() = %q, want %q", got, want)
 	}

@@ -43,8 +43,8 @@ package, so test tables would otherwise drag production strings over the thresho
 | `main`                | flags (`-config`, `-version`), build metadata + `versionInfo()`, `setupLogger`, `run()` → `runContext(ctx, cfg, appDeps)` orchestration, graceful shutdown |
 | `internal/config`     | TOML load + `errors.Join` validation, derived allowlist maps, channel normalization |
 | `internal/mattermost` | stdlib `net/http` client for the two endpoints we use: `New`, `Ping`, `Post`, `Truncate` |
-| `internal/markdown`   | `EscapeText`: flattens and escapes single-line labels embedded in Markdown          |
-| `internal/telegram`   | bot `Handler`, forwarded-message formatting, `NewBot`                               |
+| `internal/markdown`   | `EscapeText` (flattens + escapes single-line labels) and `EscapeBody` (escapes multi-line bodies, keeping line breaks) |
+| `internal/telegram`   | bot `Handler`, forwarded-message formatting, entity → Markdown rendering (`entities.go`), `NewBot` |
 | `internal/miniflux`   | webhook types, `ValidSignature` (HMAC), `FormatPost`                                |
 | `internal/server`     | HTTP mux, health/version/miniflux handlers, logging + recover middleware            |
 
@@ -81,6 +81,18 @@ the real packages.
 - **HMAC over the raw body, before JSON**: `handleMiniflux` reads the full body,
   verifies `X-Miniflux-Signature`, and only then unmarshals. Do not reorder — the
   signature covers the exact bytes and unauthenticated input must not be parsed.
+- **Telegram entity offsets are UTF-16 code units**, not bytes and not runes.
+  `renderEntities` (`internal/telegram/entities.go`) encodes the body with
+  `utf16.Encode` and does all boundary arithmetic there; indexing a `[]rune`
+  instead silently shifts every span after the first non-BMP character (emoji).
+  A test with an emoji ahead of the entity pins this.
+- **The forwarded body is escaped**, unlike in earlier versions: everything
+  outside a recognized entity goes through `markdown.EscapeBody`, and the only
+  markup in the post is what `renderEntities` emitted. That is what makes the
+  post match what the author saw in Telegram and keeps a forwarded channel from
+  injecting its own markup. `EscapeText` cannot be used here — it flattens line
+  breaks. Content of `code`/`pre` is the exception: it is emitted verbatim,
+  since a backslash inside backticks would show up literally.
 - **Truncation is by runes**, not bytes (`mattermost.Truncate`) — safe for
   multibyte text. Both sources go through `mattermost.Post`, so this is
   centralized. The limit comes from `[mattermost] max_message_runes`; 16383 is

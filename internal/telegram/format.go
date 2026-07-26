@@ -9,9 +9,10 @@ import (
 )
 
 // FormatForwarded renders a forwarded message into the text posted to
-// Mattermost: an attribution line naming the origin, followed by the body.
-func FormatForwarded(origin *models.MessageOrigin, text string) string {
-	return fmt.Sprintf("Forwarded from %s:\n\n%s", originDescription(origin), text)
+// Mattermost: an attribution line naming the origin, followed by the body with
+// its Telegram formatting rebuilt from entities.
+func FormatForwarded(origin *models.MessageOrigin, text string, entities []models.MessageEntity) string {
+	return fmt.Sprintf("Forwarded from %s:\n\n%s", originDescription(origin), renderEntities(text, entities))
 }
 
 // originDescription produces a human-readable source label for every
@@ -73,11 +74,16 @@ func chatName(c models.Chat) string {
 }
 
 // channelLabel names a source channel and, when it has a public username, links
-// to the exact forwarded message.
+// to the exact forwarded message. The title is escaped, so it cannot break out
+// of the link label; the URL goes through the same sanitizer as message links.
 func channelLabel(o *models.MessageOriginChannel) string {
 	title := markdown.EscapeText(chatName(o.Chat))
-	if o.Chat.Username != "" {
-		return fmt.Sprintf("%s (https://t.me/%s/%d)", title, o.Chat.Username, o.MessageID)
+	if o.Chat.Username == "" {
+		return title
 	}
-	return title
+	target, ok := safeURL(fmt.Sprintf("https://t.me/%s/%d", o.Chat.Username, o.MessageID))
+	if !ok {
+		return title
+	}
+	return fmt.Sprintf("[%s](%s)", title, target)
 }

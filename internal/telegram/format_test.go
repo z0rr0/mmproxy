@@ -95,7 +95,7 @@ func TestFormatForwarded(t *testing.T) {
 		MessageOriginUser: &models.MessageOriginUser{SenderUser: models.User{FirstName: "Bob"}},
 	}
 	got := FormatForwarded(origin, "hello world", nil)
-	want := "Forwarded from Bob:\n\nhello world"
+	want := "Forwarded from Telegram Bob:\n\nhello world"
 	if got != want {
 		t.Errorf("FormatForwarded() = %q, want %q", got, want)
 	}
@@ -117,7 +117,7 @@ func TestFormatForwardedEscapesAttributionAndBody(t *testing.T) {
 		},
 	}
 	got := FormatForwarded(origin, "**not really bold**", nil)
-	want := "Forwarded from [\\[News\\] \\#1 Injected](https://t.me/newschan/42):" +
+	want := "Forwarded from Telegram [\\[News\\] \\#1 Injected](https://t.me/newschan/42):" +
 		"\n\n\\*\\*not really bold\\*\\*"
 	if got != want {
 		t.Fatalf("FormatForwarded() = %q, want %q", got, want)
@@ -136,7 +136,7 @@ func TestFormatForwardedRendersEntities(t *testing.T) {
 		{Type: models.MessageEntityTypeTextLink, Offset: 7, Length: 4, URL: "https://example.com"},
 	}
 	got := FormatForwarded(origin, "Срочно тута", entities)
-	want := "Forwarded from Bob:\n\n**Срочно** [тута](https://example.com)"
+	want := "Forwarded from Telegram Bob:\n\n**Срочно** [тута](https://example.com)"
 	if got != want {
 		t.Fatalf("FormatForwarded() = %q, want %q", got, want)
 	}

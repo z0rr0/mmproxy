@@ -163,7 +163,7 @@ func TestHandleForwardedText(t *testing.T) {
 	if poster.channel != "tg-channel" {
 		t.Errorf("channel = %q, want tg-channel", poster.channel)
 	}
-	if !strings.Contains(poster.message, "Forwarded from Src") || !strings.Contains(poster.message, "**important** news") {
+	if !strings.Contains(poster.message, "Forwarded from Telegram Src") || !strings.Contains(poster.message, "**important** news") {
 		t.Errorf("message = %q, missing attribution or formatted body", poster.message)
 	}
 	// Reply is a confirmation directed at the origin chat and message.

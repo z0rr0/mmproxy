@@ -12,7 +12,7 @@ import (
 // Mattermost: an attribution line naming the origin, followed by the body with
 // its Telegram formatting rebuilt from entities.
 func FormatForwarded(origin *models.MessageOrigin, text string, entities []models.MessageEntity) string {
-	return fmt.Sprintf("Forwarded from %s:\n\n%s", originDescription(origin), renderEntities(text, entities))
+	return fmt.Sprintf("Forwarded from Telegram %s:\n\n%s", originDescription(origin), renderEntities(text, entities))
 }
 
 // originDescription produces a human-readable source label for every

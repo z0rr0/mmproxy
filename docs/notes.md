@@ -52,7 +52,7 @@ is returned to the caller (bot reply / HTTP status) rather than retried.
 Example post:
 
 ```
-Forwarded from [News](https://t.me/newschan/42):
+Forwarded from Telegram [News](https://t.me/newschan/42):
 
 **Breaking**: something [happened](https://example.com/story).
 ```

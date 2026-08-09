@@ -2,6 +2,8 @@
 
 Guidance for LLM agents working in this repository.
 
+Before writing any code: read the relevant packages, critique my proposed approach below (call out anything wrong, risky, or missing), then produce a numbered implementation plan with file-by-file changes, test strategy, and doc updates. Wait for my approval before editing.
+
 ## What this is
 
 MMProxy: a small Go 1.26 service that proxies messages into a Mattermost channel
@@ -155,3 +157,26 @@ the real packages.
   with `latest` and `$(TAG)`; `docker-push` refuses the `v0.0.0` fallback so an
   untagged tree cannot be published. `docker-compose.yml` no longer builds
   anything — it just runs `z0rr0/mmproxy:latest`.
+
+## Linting
+
+- Always run golangci-lint with the project config: `golangci-lint run -c golangci.yml` (never the default config).
+- Lint rules in active use include gofmt, godot, forbidigo, and recvcheck. Before finishing: end all comments with a period, avoid `fmt.Print*` in library code, and keep receivers consistent (all value or all pointer) per type.
+
+## Definition of Done
+
+Every change is not complete until: `make test` passes, `golangci-lint run -c golangci.yml` is clean, test coverage has not regressed, and README/docs are updated to reflect the change.
+
+## Go Test Conventions
+
+- Never ignore returned errors in tests; use small helpers or `t.Log`/`t.Fatal` on the error rather than `_ =`.
+- Prefer table-driven tests, and add fuzz targets for parsing/formatting code paths.
+- When writing HTTP tests, always fully read and close response bodies to avoid hangs.
+
+## Configuration & Secrets
+
+- Do not read `config.toml` or any local secret/config files; ask the user for values instead. This is enforced via deny rules and a PreToolUse hook.
+
+## Build Metadata
+
+Binaries expose version info via a `-version` flag populated with `-ldflags` (version, commit, build date). Keep the Makefile ldflags, the `main.go` globals, and OCI image labels in sync when either changes.

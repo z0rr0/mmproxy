@@ -13,7 +13,8 @@ debug = false
 # a timeout.
 # Limit for reading an entire request, including its body. Default "10s".
 read_timeout = "10s"
-# Limit for reading the request headers. Default "5s".
+# Limit for reading the request headers. Must not exceed read_timeout.
+# Default "5s".
 read_header_timeout = "5s"
 # Limit for writing a response. Must exceed mattermost.timeout, because the
 # Miniflux webhook posts to Mattermost synchronously. Default "30s".

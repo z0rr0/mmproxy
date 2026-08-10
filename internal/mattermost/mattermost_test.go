@@ -180,10 +180,71 @@ func TestAPIErrorDoesNotExposeToken(t *testing.T) {
 }
 
 func TestNewRejectsInvalidURL(t *testing.T) {
-	for _, rawURL := range []string{"https:", "ftp://mm.example.com"} {
-		if _, err := New(rawURL, "token", time.Second, defaultMaxMessageRunes); err == nil {
-			t.Errorf("New(%q) succeeded, want error", rawURL)
+	tests := []struct {
+		name    string
+		rawURL  string
+		wantErr string
+	}{
+		{name: "no host", rawURL: "https:", wantErr: "scheme and host"},
+		{name: "bad scheme", rawURL: "ftp://mm.example.com", wantErr: "scheme and host"},
+		{name: "api path", rawURL: "https://mm.example.com/api/v4", wantErr: "must not end with /api/v4"},
+		{name: "api path with trailing slash", rawURL: "https://mm.example.com/api/v4/", wantErr: "must not end with /api/v4"},
+		{name: "api path below site subpath", rawURL: "https://mm.example.com/site/api/v4", wantErr: "must not end with /api/v4"},
+		{name: "duplicate slashes", rawURL: "https://mm.example.com//api/v4", wantErr: "must not end with /api/v4"},
+		{name: "api path with dot segment", rawURL: "https://mm.example.com/api/./v4", wantErr: "must not end with /api/v4"},
+		{name: "api path with trailing dot segment", rawURL: "https://mm.example.com/api/v4/.", wantErr: "must not end with /api/v4"},
+		{name: "encoded dot segment", rawURL: "https://mm.example.com/api/%2e/v4", wantErr: "must not end with /api/v4"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, err := New(tt.rawURL, "token", time.Second, defaultMaxMessageRunes)
+			if err == nil {
+				t.Fatalf("New(%q) succeeded, want error", tt.rawURL)
+			}
+			if !strings.Contains(err.Error(), tt.wantErr) {
+				t.Errorf("New(%q) error = %q, want substring %q", tt.rawURL, err, tt.wantErr)
+			}
+		})
+	}
+}
+
+func TestNewAcceptsValidURL(t *testing.T) {
+	for _, rawURL := range []string{
+		"https://mm.example.com/site",
+		"https://mm.example.com/api/v40",
+		"https://mm.example.com/api/v4/site",
+		"https://user@mm.example.com/site?x=y#fragment",
+	} {
+		if _, err := New(rawURL, "token", time.Second, defaultMaxMessageRunes); err != nil {
+			t.Errorf("New(%q) failed: %v", rawURL, err)
 		}
+	}
+}
+
+func TestNewRequestPreservesBasePath(t *testing.T) {
+	client := mustClient(t, "https://mm.example.com/site/", "token")
+	req, err := client.newRequest(t.Context(), http.MethodGet, "/api/v4/users/me", nil)
+	if err != nil {
+		t.Fatalf("newRequest failed: %v", err)
+	}
+	const want = "https://mm.example.com/site/api/v4/users/me"
+	if got := req.URL.String(); got != want {
+		t.Errorf("request URL = %q, want %q", got, want)
+	}
+}
+
+// TestNewCleansBasePath proves New stores the cleaned base path: a dot segment
+// that passed validation must not leak into request URLs, where it would
+// trigger a server redirect that downgrades POST to GET.
+func TestNewCleansBasePath(t *testing.T) {
+	client := mustClient(t, "https://mm.example.com/site/.", "token")
+	req, err := client.newRequest(t.Context(), http.MethodGet, "/api/v4/users/me", nil)
+	if err != nil {
+		t.Fatalf("newRequest failed: %v", err)
+	}
+	const want = "https://mm.example.com/site/api/v4/users/me"
+	if got := req.URL.String(); got != want {
+		t.Errorf("request URL = %q, want %q", got, want)
 	}
 }
 

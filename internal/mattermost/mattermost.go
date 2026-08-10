@@ -12,11 +12,15 @@ import (
 	"log/slog"
 	"net/http"
 	"net/url"
+	"path"
 	"strings"
 	"time"
 )
 
 const (
+	// apiPrefix is the API root every request path starts with; New rejects
+	// base URLs that already end with it.
+	apiPrefix = "/api/v4"
 	// defaultMaxMessageRunes is the fallback when New receives a non-positive
 	// rune limit. It matches the Mattermost default post limit (MaxPostSize).
 	defaultMaxMessageRunes = 16383
@@ -35,7 +39,8 @@ type Client struct {
 }
 
 // New builds a client for baseURL authenticated with a bot or personal access
-// token. The base URL must identify the Mattermost site, without /api/v4. The
+// token. The base URL must identify the Mattermost site, without /api/v4; its
+// path is normalized with path.Clean before use. The
 // timeout bounds each API call; a non-positive value falls back to
 // defaultTimeout, since a zero deadline would fail every request. maxRunes caps
 // the length of a post in runes and follows the same rule: a non-positive value
@@ -49,6 +54,18 @@ func New(baseURL, token string, timeout time.Duration, maxRunes int) (*Client, e
 
 	if (parsed.Scheme != "http" && parsed.Scheme != "https") || parsed.Host == "" {
 		return nil, errors.New("mattermost URL must have an http or https scheme and host")
+	}
+	// Keep in sync with the identical suffix check in config.Mattermost.validate.
+	cleaned := path.Clean(parsed.Path)
+	if strings.HasSuffix(cleaned, apiPrefix) {
+		return nil, errors.New("mattermost URL must not end with " + apiPrefix)
+	}
+	// Store the cleaned path, so newRequest routes with exactly what was
+	// validated: a surviving dot segment would make the server redirect to the
+	// cleaned path, and the client re-issues a redirected POST as a bodyless GET.
+	if parsed.Path != "" {
+		parsed.Path = cleaned
+		parsed.RawPath = ""
 	}
 
 	if timeout <= 0 {
@@ -73,7 +90,7 @@ func (c *Client) Ping(ctx context.Context) error {
 	ctx, cancel := context.WithTimeout(ctx, c.timeout)
 	defer cancel()
 
-	req, err := c.newRequest(ctx, http.MethodGet, "/api/v4/users/me", nil)
+	req, err := c.newRequest(ctx, http.MethodGet, apiPrefix+"/users/me", nil)
 	if err != nil {
 		return fmt.Errorf("mattermost ping: %w", err)
 	}
@@ -118,7 +135,7 @@ func (c *Client) Post(ctx context.Context, channelID, message string) error {
 		return fmt.Errorf("marshal mattermost post: %w", err)
 	}
 
-	req, err := c.newRequest(ctx, http.MethodPost, "/api/v4/posts", bytes.NewReader(body))
+	req, err := c.newRequest(ctx, http.MethodPost, apiPrefix+"/posts", bytes.NewReader(body))
 	if err != nil {
 		return fmt.Errorf("mattermost create post: %w", err)
 	}

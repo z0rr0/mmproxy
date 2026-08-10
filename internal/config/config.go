@@ -9,7 +9,9 @@ import (
 	"fmt"
 	"net/url"
 	"os"
+	"path"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/pelletier/go-toml/v2"
@@ -90,9 +92,9 @@ func (t *Telegram) Enabled() bool { return t.Token != "" }
 // Enabled reports whether the Miniflux source is active.
 func (m *Miniflux) Enabled() bool { return m.WebhookSecret != "" }
 
-// Load reads, parses and validates the configuration file at path.
-func Load(path string) (*Config, error) {
-	data, err := os.ReadFile(filepath.Clean(path))
+// Load reads, parses and validates the configuration file at filePath.
+func Load(filePath string) (*Config, error) {
+	data, err := os.ReadFile(filepath.Clean(filePath))
 	if err != nil {
 		return nil, fmt.Errorf("read config file: %w", err)
 	}
@@ -119,8 +121,11 @@ func (c *Config) applyDefaults() {
 	if c.Base.ReadTimeout == 0 {
 		c.Base.ReadTimeout = Duration(defaultReadTimeout)
 	}
+	// The header timeout default is capped at ReadTimeout: crossValidate
+	// rejects read_header_timeout > read_timeout, and a config that only
+	// lowers read_timeout must not fail because of a value it never set.
 	if c.Base.ReadHeaderTimeout == 0 {
-		c.Base.ReadHeaderTimeout = Duration(defaultReadHeaderTimeout)
+		c.Base.ReadHeaderTimeout = min(Duration(defaultReadHeaderTimeout), c.Base.ReadTimeout)
 	}
 	if c.Base.WriteTimeout == 0 {
 		c.Base.WriteTimeout = Duration(defaultWriteTimeout)
@@ -159,12 +164,19 @@ func (m *Mattermost) validate() error {
 	var errs []error
 	if m.URL == "" {
 		errs = append(errs, errors.New("mattermost: url is required"))
-	} else if u, err := url.Parse(m.URL); err != nil {
-		errs = append(errs, fmt.Errorf("mattermost: invalid url: %w", err))
-	} else if u.Scheme != "http" && u.Scheme != "https" {
-		errs = append(errs, fmt.Errorf("mattermost: url scheme must be http or https, got %q", u.Scheme))
-	} else if u.Host == "" {
-		errs = append(errs, errors.New("mattermost: url host is required"))
+	} else {
+		u, err := url.Parse(m.URL)
+		switch {
+		case err != nil:
+			errs = append(errs, fmt.Errorf("mattermost: invalid url: %w", err))
+		case u.Scheme != "http" && u.Scheme != "https":
+			errs = append(errs, fmt.Errorf("mattermost: url scheme must be http or https, got %q", u.Scheme))
+		case u.Host == "":
+			errs = append(errs, errors.New("mattermost: url host is required"))
+		// Keep in sync with the identical suffix check in mattermost.New.
+		case strings.HasSuffix(path.Clean(u.Path), "/api/v4"):
+			errs = append(errs, errors.New("mattermost: url must not end with /api/v4"))
+		}
 	}
 	if m.Token == "" {
 		errs = append(errs, errors.New("mattermost: token is required"))
@@ -211,6 +223,12 @@ func (c *Config) crossValidate() error {
 	var errs []error
 	if !c.Telegram.Enabled() && !c.Miniflux.Enabled() {
 		errs = append(errs, errors.New("at least one source (telegram or miniflux) must be enabled"))
+	}
+	// ReadTimeout starts before the headers are read. A longer header timeout
+	// could therefore leave an already-expired deadline for the request body.
+	if c.Base.ReadHeaderTimeout > c.Base.ReadTimeout {
+		errs = append(errs, fmt.Errorf("base: read_header_timeout (%s) must not exceed read_timeout (%s)",
+			c.Base.ReadHeaderTimeout, c.Base.ReadTimeout))
 	}
 	// The Miniflux webhook posts to Mattermost synchronously, so a response cut
 	// short by write_timeout would abandon a request that is still in flight.

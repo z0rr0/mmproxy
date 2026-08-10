@@ -102,6 +102,15 @@ the real packages.
   (applied in `applyDefaults`) and `mattermost.defaultMaxMessageRunes` (the
   fallback in `New` for non-positive input, so the package stays usable without
   `config`, same as `defaultTimeout`). Keep them in sync.
+- **The `/api/v4` suffix check is duplicated** for the same reason: the
+  `strings.HasSuffix(path.Clean(...), "/api/v4")` expression lives in both
+  `config.Mattermost.validate` (friendly config error) and `mattermost.New`
+  (the constructor's own contract). Keep them in sync. `New` additionally
+  stores the **cleaned** base path, so `newRequest` routes with exactly what
+  was validated — a surviving dot segment would make the server redirect and
+  the client re-issue a POST as a bodyless GET. The defaulted (not explicit)
+  `read_header_timeout` is capped at `read_timeout` in `applyDefaults`;
+  `crossValidate` rejects an explicit `read_header_timeout > read_timeout`.
 - **Build metadata via ldflags**: `Version`, `Revision` and `BuildDate` in `main`
   are overwritten by `-X main.Version=... -X main.Revision=... -X main.BuildDate=...`
   (see `Makefile`). Keep the variable names if you change the build. `GoVersion` is

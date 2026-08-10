@@ -191,6 +191,92 @@ timeout = "-5s"
 	}
 }
 
+func TestLoadMattermostURLPath(t *testing.T) {
+	tests := []struct {
+		name    string
+		rawURL  string
+		wantErr bool
+	}{
+		{name: "api path", rawURL: "https://mm.example.com/api/v4", wantErr: true},
+		{name: "api path with trailing slash", rawURL: "https://mm.example.com/api/v4/", wantErr: true},
+		{name: "api path below site subpath", rawURL: "https://mm.example.com/site/api/v4", wantErr: true},
+		{name: "duplicate slashes", rawURL: "https://mm.example.com//api/v4", wantErr: true},
+		{name: "duplicate slashes with trailing slash", rawURL: "https://mm.example.com//api/v4/", wantErr: true},
+		{name: "api path with dot segment", rawURL: "https://mm.example.com/api/./v4", wantErr: true},
+		{name: "api path with trailing dot segment", rawURL: "https://mm.example.com/api/v4/.", wantErr: true},
+		{name: "encoded dot segment", rawURL: "https://mm.example.com/api/%2e/v4", wantErr: true},
+		{name: "site subpath", rawURL: "https://mm.example.com/site"},
+		{name: "similar segment", rawURL: "https://mm.example.com/api/v40"},
+		{name: "api path not at end", rawURL: "https://mm.example.com/api/v4/site"},
+		{name: "other URL components", rawURL: "https://user@mm.example.com/site?x=y#fragment"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			content := strings.Replace(validConfig, "https://mm.example.com", tt.rawURL, 1)
+			_, err := Load(writeConfig(t, content))
+			if tt.wantErr {
+				if err == nil {
+					t.Fatal("expected validation error")
+				}
+				if !strings.Contains(err.Error(), "url must not end with /api/v4") {
+					t.Errorf("error = %q, want API path validation error", err)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+		})
+	}
+}
+
+func TestLoadReadTimeoutRelation(t *testing.T) {
+	tests := []struct {
+		name              string
+		readTimeout       string
+		readHeaderTimeout string
+		wantErr           bool
+	}{
+		{name: "header below total", readTimeout: "10s", readHeaderTimeout: "5s"},
+		{name: "equal", readTimeout: "10s", readHeaderTimeout: "10s"},
+		{name: "header above total", readTimeout: "5s", readHeaderTimeout: "10s", wantErr: true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			timeouts := "debug = true\nread_timeout = \"" + tt.readTimeout +
+				"\"\nread_header_timeout = \"" + tt.readHeaderTimeout + "\""
+			content := strings.Replace(validConfig, "debug = true", timeouts, 1)
+			_, err := Load(writeConfig(t, content))
+			if tt.wantErr {
+				if err == nil {
+					t.Fatal("expected validation error")
+				}
+				if !strings.Contains(err.Error(), "read_header_timeout") {
+					t.Errorf("error = %q, want read timeout validation error", err)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+		})
+	}
+}
+
+// TestLoadReadHeaderTimeoutDefaultCapped proves that lowering only read_timeout
+// keeps the config valid: the defaulted read_header_timeout is capped at
+// read_timeout instead of tripping crossValidate with a value the user never set.
+func TestLoadReadHeaderTimeoutDefaultCapped(t *testing.T) {
+	content := strings.Replace(validConfig, "debug = true", "debug = true\nread_timeout = \"2s\"", 1)
+	cfg, err := Load(writeConfig(t, content))
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if got, want := cfg.Base.ReadHeaderTimeout.Timed(), 2*time.Second; got != want {
+		t.Errorf("read_header_timeout = %v, want capped %v", cfg.Base.ReadHeaderTimeout, want)
+	}
+}
+
 func TestLoadChannelOverride(t *testing.T) {
 	content := `
 [mattermost]

@@ -79,8 +79,8 @@ of the health check.
 TOML, passed via `-config` (default `config.toml`). See
 [`docs/config.toml`](docs/config.toml) for the annotated example. Key points:
 
-- `[mattermost]` `url`, `token`, `channel_id` are always required. Prefer a dedicated bot account that is a member of
-  the target channel.
+- `[mattermost]` `url`, `token`, `channel_id` are always required. `url` is the site base URL and must not end with
+  `/api/v4`. Prefer a dedicated bot account that is a member of the target channel.
 - `[telegram]` is enabled when `token` is set; `allowed_users` (numeric Telegram IDs) is then required. Empty per-source
   `channel_id` falls back to the shared Mattermost channel.
 - `[miniflux]` is enabled when `webhook_secret` is set. Requests are authenticated by the `X-Miniflux-Signature`
@@ -88,8 +88,9 @@ TOML, passed via `-config` (default `config.toml`). See
   optionally restricts which feeds are accepted.
 - Timeouts are Go duration strings: `[base]` `read_timeout`,
   `read_header_timeout`, `write_timeout`, `idle_timeout`, `shutdown_timeout` and
-  `[mattermost]` `timeout`. Each is optional and falls back to its default;
-  `base.write_timeout` must exceed `mattermost.timeout`, otherwise startup fails.
+  `[mattermost]` `timeout`. Each is optional and falls back to its default. `base.read_header_timeout` must not exceed
+  `base.read_timeout` (when omitted, its default is capped at `read_timeout` automatically), and `base.write_timeout`
+  must exceed `mattermost.timeout`; otherwise startup fails.
 - `[mattermost]` `max_message_runes` caps a post length in runes (not bytes); longer messages are truncated with an
   ellipsis. Optional, default 16383 — the Mattermost `MaxPostSize` default. Raise it to match a server configured for
   longer posts. Like the timeouts, an omitted key or `0` means the default.

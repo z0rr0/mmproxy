@@ -7,6 +7,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"uuid"
 )
 
 func TestRecoverMiddleware(t *testing.T) {
@@ -43,6 +44,23 @@ func TestLoggingMiddlewareRequestID(t *testing.T) {
 	}
 }
 
+func TestNewRequestID(t *testing.T) {
+	first, second := newRequestID(), newRequestID()
+	if first == second {
+		t.Errorf("two calls returned the same ID %q", first)
+	}
+	for _, id := range []string{first, second} {
+		if _, err := uuid.Parse(id); err != nil {
+			t.Errorf("uuid.Parse(%q): %v", id, err)
+		}
+		// A generated ID has to survive its own sanitizer: it is echoed back and a
+		// proxy may hand it to us again on a retry.
+		if got := sanitizeRequestID(id); got != id {
+			t.Errorf("sanitizeRequestID(%q) = %q, want it accepted unchanged", id, got)
+		}
+	}
+}
+
 func TestSanitizeRequestID(t *testing.T) {
 	tests := []struct {
 		name string
@@ -50,6 +68,7 @@ func TestSanitizeRequestID(t *testing.T) {
 		want string
 	}{
 		{"hex", "8f14e45fceea167a", "8f14e45fceea167a"},
+		{"uuid", "3f2b1c8e-9a4d-4e7f-b1c2-5d6e7f8a9b0c", "3f2b1c8e-9a4d-4e7f-b1c2-5d6e7f8a9b0c"},
 		{"dashes and underscores", "trace-abc_123", "trace-abc_123"},
 		{"empty", "", ""},
 		{"too long", strings.Repeat("a", maxRequestIDLen+1), ""},

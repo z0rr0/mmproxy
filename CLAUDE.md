@@ -88,7 +88,9 @@ the real packages.
   the logging middleware, so the ID does not exist yet at that layer. A client
   `X-Request-ID` is reused only when `sanitizeRequestID` accepts it (≤64 chars of
   `[A-Za-z0-9_-]`); the value is echoed back in a header and written to logs, so
-  anything else is replaced by a generated ID.
+  anything else is replaced by a generated ID. Generated IDs are `uuid.New()` from
+  the **standard library** `uuid` package (Go 1.27+) — not a third-party module, so
+  the two-direct-dependency rule below is no reason to hand-roll one again.
 
 ## Gotchas
 

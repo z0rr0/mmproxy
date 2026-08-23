@@ -96,7 +96,8 @@ Example post:
 ## Request IDs
 
 - Every HTTP request gets an ID: a valid incoming `X-Request-ID` is reused, otherwise
-  an 8-byte hex value is generated. "Valid" means at most 64 characters of
+  a UUIDv4 is generated with the standard library `uuid` package (Go 1.27+).
+  "Valid" means at most 64 characters of
   `A-Z a-z 0-9 - _` — the ID is echoed back in the response header and written to
   logs, so any other input is discarded rather than trusted.
 - The ID is echoed in the `X-Request-ID` response header and carried in the request

@@ -2,17 +2,16 @@ package server
 
 import (
 	"context"
-	"crypto/rand"
-	"encoding/hex"
 	"log/slog"
 	"net/http"
 	"runtime/debug"
 	"time"
+	"uuid"
 )
 
 const (
 	requestIDHeader = "X-Request-ID"
-	// maxRequestIDLen caps a client-supplied request ID; ours is 16 hex chars.
+	// maxRequestIDLen caps a client-supplied request ID; ours is a 36-char UUID.
 	maxRequestIDLen = 64
 )
 
@@ -70,14 +69,11 @@ func (w *responseWriter) Write(b []byte) (int, error) {
 // by the underlying writer.
 func (w *responseWriter) Unwrap() http.ResponseWriter { return w.ResponseWriter }
 
-// newRequestID returns a short random hex identifier without pulling in an
-// external UUID dependency.
+// newRequestID returns an identifier for a request that arrived without a
+// usable X-Request-ID of its own. The canonical UUID form only uses characters
+// sanitizeRequestID accepts, so our own IDs survive a round trip through a proxy.
 func newRequestID() string {
-	var buf [8]byte
-	if _, err := rand.Read(buf[:]); err != nil {
-		return "unknown"
-	}
-	return hex.EncodeToString(buf[:])
+	return uuid.New().String()
 }
 
 // sanitizeRequestID accepts a client-supplied request ID only when it is a short

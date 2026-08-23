@@ -39,7 +39,7 @@ Check it:
 
 ```bash
 curl -i localhost:8080/health     # 200 OK
-curl -s localhost:8080/version    # MMProxy: v0.0.1 git:195a144 go1.26.5 2026-07-15T09:39:45
+curl -s localhost:8080/version    # MMProxy: v0.0.1 git:195a144 go1.27.0 2026-07-15T09:39:45
 ```
 
 ### Docker
@@ -110,7 +110,7 @@ make docker-push # multi-arch (amd64 + arm64) build pushed to Docker Hub
 make clean
 ```
 
-Requires Go 1.26 and (for linting) `golangci-lint`. GitHub Actions runs build, vet, race-enabled tests and lint on
+Requires Go 1.27 and (for linting) `golangci-lint`. GitHub Actions runs build, vet, race-enabled tests and lint on
 pushes and pull requests to `main`;
 `govulncheck` is reported separately without blocking CI.
 

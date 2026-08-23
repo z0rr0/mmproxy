@@ -1,4 +1,4 @@
-ARG GOLANG_VERSION=1.26.5
+ARG GOLANG_VERSION=1.27.0
 ARG ALPINE_VERSION=3.24
 
 # The builder runs natively on the host arch ($BUILDPLATFORM) and cross-compiles:

@@ -6,7 +6,7 @@ Before writing any code: read the relevant packages, critique my proposed approa
 
 ## What this is
 
-MMProxy: a small Go 1.26 service that proxies messages into a Mattermost channel
+MMProxy: a small Go 1.27 service that proxies messages into a Mattermost channel
 from a Telegram bot (forwarded messages) and Miniflux webhooks. Synchronous,
 retry-free, standard-library HTTP. See `docs/notes.md` for business logic.
 
@@ -28,6 +28,18 @@ Note the name has no leading dot, so the binary does not autodiscover it — alw
 run` silently uses the default five-linter config and proves nothing.
 `fieldalignment` is intentionally disabled so config structs mirror their TOML
 sections.
+
+**`default: all` re-enables renamed linters.** When golangci-lint gives a linter
+a new major version it ships the new name as a *separate* linter and leaves the
+old one as a deprecated alias, so a disable list holding only the old name lets
+the new one back in. That is how the 2.12 → 2.13 upgrade turned `exhaustruct_v5`
+on and broke `make lint` with 50 findings. Both names stay in `disable`
+(`exhaustruct`/`exhaustruct_v5`, `wsl`/`wsl_v5`) so the config survives a
+downgrade too. `gomodguard` is the other half of that upgrade: only the
+deprecated alias is disabled, to silence its warning — `gomodguard_v2` stays
+enabled and, with no allow/block list, never fires. After bumping golangci-lint,
+check `golangci-lint linters -c golangci.yml` for `[deprecated]` entries in the
+enabled section.
 
 `run.tests` is **on**, so `errcheck` covers `*_test.go` too. Three linters are
 excluded for `_test\.go` via `linters.exclusions.rules`, each for a reason spelled

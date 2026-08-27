@@ -97,6 +97,16 @@ the real packages.
 - **HMAC over the raw body, before JSON**: `handleMiniflux` reads the full body,
   verifies `X-Miniflux-Signature`, and only then unmarshals. Do not reorder — the
   signature covers the exact bytes and unauthenticated input must not be parsed.
+- **JSON is `encoding/json/v2`** (stdlib, GA in Go 1.27): `server`, `mattermost`
+  and their tests import it explicitly. The strict v2 defaults are deliberate —
+  duplicate object names and invalid UTF-8 in the webhook body are a 400
+  (`server_test.go` pins both), and field matching is case-sensitive.
+  `decodeLimited` uses `json.UnmarshalRead`, which consumes the reader to EOF,
+  so trailing garbage after the JSON value is an error. Marshaling no longer
+  escapes HTML characters (`<` stays `<` in the post payload) — semantically
+  the same JSON, and Mattermost accepts it. Do not revert any of these sites to
+  v1: the old package still works (it is backed by v2 since Go 1.27) but keeps
+  the loose semantics.
 - **Telegram entity offsets are UTF-16 code units**, not bytes and not runes.
   `renderEntities` (`internal/telegram/entities.go`) encodes the body with
   `utf16.Encode` and does all boundary arithmetic there; indexing a `[]rune`

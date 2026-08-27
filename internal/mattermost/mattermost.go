@@ -5,7 +5,7 @@ package mattermost
 import (
 	"bytes"
 	"context"
-	"encoding/json"
+	"encoding/json/v2"
 	"errors"
 	"fmt"
 	"io"
@@ -198,7 +198,9 @@ func responseError(resp *http.Response) error {
 
 func decodeLimited(r io.Reader, dst any) error {
 	limited := &io.LimitedReader{R: r, N: maxResponseBytes + 1}
-	if err := json.NewDecoder(limited).Decode(dst); err != nil {
+	// UnmarshalRead consumes the reader to EOF, so trailing garbage after the
+	// JSON value is an error, not silently ignored.
+	if err := json.UnmarshalRead(limited, dst); err != nil {
 		return fmt.Errorf("decode JSON: %w", err)
 	}
 	if limited.N <= 0 {

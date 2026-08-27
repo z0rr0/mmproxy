@@ -212,17 +212,30 @@ func TestMinifluxBadSignature(t *testing.T) {
 }
 
 func TestMinifluxBadJSON(t *testing.T) {
-	poster := &mockPoster{}
-	ts := newTestServer(t, poster, []int64{1})
-
-	body := `{"event_type":"new_entries", broken`
-	resp := post(t, ts.URL+"/miniflux", sign(body), body)
-
-	if resp.StatusCode != http.StatusBadRequest {
-		t.Errorf("status = %d, want 400", resp.StatusCode)
+	tests := []struct {
+		name string
+		body string
+	}{
+		{name: "broken syntax", body: `{"event_type":"new_entries", broken`},
+		// The next two pin the strict encoding/json/v2 defaults: duplicate
+		// object names and invalid UTF-8 are rejected, not silently accepted.
+		{name: "duplicate key", body: `{"event_type":"new_entries","event_type":"x","feed":{"id":1},"entries":[]}`},
+		{name: "invalid utf-8", body: "{\"event_type\":\"new_entries\",\"feed\":{\"title\":\"\xff\"}}"},
 	}
-	if poster.calls != 0 {
-		t.Errorf("poster called %d times, want 0", poster.calls)
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			poster := &mockPoster{}
+			ts := newTestServer(t, poster, []int64{1})
+
+			resp := post(t, ts.URL+"/miniflux", sign(tt.body), tt.body)
+
+			if resp.StatusCode != http.StatusBadRequest {
+				t.Errorf("status = %d, want 400", resp.StatusCode)
+			}
+			if poster.calls != 0 {
+				t.Errorf("poster called %d times, want 0", poster.calls)
+			}
+		})
 	}
 }
 

@@ -106,12 +106,13 @@ Example post:
 | Mattermost returned an error              | 502  | we are a gateway to an upstream                                    |
 | Success                                   | 200  | `OK`                                                               |
 
-Miniflux does **not** retry failed webhooks, so a 5xx means the event is lost. This is an accepted v1 trade-off of the
-synchronous, retry-free design.
+Miniflux does **not** retry failed webhooks, so a 5xx means the event is lost. This is an accepted v1 trade-off of
+synchronous processing without application-level delivery retries.
 
 ## Deliberate v1 trade-offs
 
-- Synchronous, **no retries, no queue, no metrics**.
+- Synchronous, **no application-level delivery retries, no queue, no metrics**. The Telegram library's HTTP transport
+  may retry a request after an HTTP/2 GOAWAY.
 - Long messages are truncated to `mattermost.max_message_runes` (by runes, not bytes — safe for multibyte text). It
   defaults to 16383, Mattermost's own
   `MaxPostSize` default, and is configurable for servers that differ. Truncation does not repair markup it cuts through,

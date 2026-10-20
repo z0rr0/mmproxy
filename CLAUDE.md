@@ -6,9 +6,11 @@ Before writing any code: read the relevant packages, critique my proposed approa
 
 ## What this is
 
-MMProxy: a small Go 1.27 service that proxies messages into a Mattermost channel
+MMProxy: a small Go 1.27.3 service that proxies messages into a Mattermost channel
 from a Telegram bot (forwarded messages) and Miniflux webhooks. Synchronous,
-retry-free, standard-library HTTP. See `docs/notes.md` for business logic.
+standard-library HTTP with no application-level delivery retries. The Telegram
+library's HTTP transport may retry a request after an HTTP/2 GOAWAY. See
+`docs/notes.md` for business logic.
 
 ## Commands
 

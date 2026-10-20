@@ -9,8 +9,8 @@ MMProxy proxies messages into a Mattermost channel from two independent sources:
 - **Telegram bot** — forward any message to the bot and it republishes the text into Mattermost.
 - **Miniflux webhook** — Miniflux pushes new feed entries; MMProxy posts them.
 
-Each source is optional; enable one or both. Processing is synchronous and retry-free: delivery errors are returned to
-the caller.
+Each source is optional; enable one or both. Processing is synchronous; the application does not retry delivery errors.
+The Telegram library's HTTP transport may retry a request after an HTTP/2 GOAWAY.
 
 ![MMProxy schema](docs/schema.png)
 
@@ -39,7 +39,7 @@ Check it:
 
 ```bash
 curl -i localhost:8080/health     # 200 OK
-curl -s localhost:8080/version    # MMProxy: v0.0.1 git:195a144 go1.27.0 2026-07-15T09:39:45
+curl -s localhost:8080/version    # MMProxy: v0.0.1 git:195a144 go1.27.3 2026-07-15T09:39:45
 ```
 
 ### Docker
@@ -110,7 +110,7 @@ make docker-push # multi-arch (amd64 + arm64) build pushed to Docker Hub
 make clean
 ```
 
-Requires Go 1.27 and (for linting) `golangci-lint`. GitHub Actions runs build, vet, race-enabled tests and lint on
+Requires Go 1.27.3 or newer and (for linting) `golangci-lint` 2.15.0. GitHub Actions runs build, vet, race-enabled tests and lint on
 pushes and pull requests to `main`;
 `govulncheck` is reported separately without blocking CI.
 

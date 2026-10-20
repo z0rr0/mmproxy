@@ -6,11 +6,10 @@
 
 MMProxy proxies messages into a Mattermost channel from two independent sources:
 
-- **Telegram bot** — forward any message to the bot and it republishes the text into Mattermost.
+- **Telegram bot** — forward a message to the bot to publish its text or caption in Mattermost. Media files are not copied.
 - **Miniflux webhook** — Miniflux pushes new feed entries; MMProxy posts them.
 
-Each source is optional; enable one or both. Processing is synchronous; the application does not retry delivery errors.
-The Telegram library's HTTP transport may retry a request after an HTTP/2 GOAWAY.
+Each source is optional; enable one or both. MMProxy processes messages synchronously and does not retry failed deliveries.
 
 ![MMProxy schema](docs/schema.png)
 
@@ -56,8 +55,8 @@ Or straight from [Docker Hub](https://hub.docker.com/r/z0rr0/mmproxy), no build 
 docker compose pull && docker compose up -d
 ```
 
-Publishing a new image (`linux/amd64` + `linux/arm64`) requires a Docker Hub login and a git tag — the version tag comes
-from the same `git tag` that feeds the build metadata, so an untagged tree is refused:
+Publishing a new image (`linux/amd64` + `linux/arm64`) requires a Docker Hub login. The image version and build metadata
+use the highest version-sorted Git tag; `make docker-push` refuses the `v0.0.0` fallback:
 
 ```bash
 docker login
@@ -116,5 +115,4 @@ pushes and pull requests to `main`;
 
 ## License
 
-This source code is governed by a [MIT](https://opensource.org/license/MIT)
-license that can be found in the [LICENSE](https://github.com/z0rr0/mmproxy/blob/main/LICENSE) file.
+Licensed under the [MIT License](LICENSE).
